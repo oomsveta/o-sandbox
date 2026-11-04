@@ -29,7 +29,9 @@ services:
       REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
       SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
       PIP_CERT: /etc/ssl/certs/ca-certificates.crt
-      # Claude Code is installed by the devcontainer feature at build time.
+      # Claude Code normally updates itself in the background, but it can't from
+      # within the container, as it gets installed in a root-owned folder.
+      # Disable the auto-update since it won't work anyways.
       DISABLE_AUTOUPDATER: "1"
     volumes:
       # The only host directories mounted into the container
