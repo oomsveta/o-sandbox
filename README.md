@@ -1,25 +1,55 @@
 > [!WARNING]
-> Work In Progress
+> 🏗️ Work In Progress
 
-## Limit disk access
+> [!WARNING]
+> Mostly vibe-coded slop ahead
 
-Only volumes defined in docker-compose.yml are mounted. These are still the actual files from my computer.
+This is my sandboxed setup for Odoo development with Claude Code inside VS Code devcontainers.
 
-TODO: do something about git hooks
+## Goals
 
-## Limit Internet access
+### Filesystem Isolation
 
-The dev container is on an internal Docker network with no route to the Internet. It can only reach two other containers, which enforce my policy, `egress-proxy/egress-policy.toml`. Changes to that file apply right away, no restart needed.
+Claude Code (or any other malicious program running in the container) can't access anything on my computer beyond what's explicitly bind-mounted into the container (see `volumes` in [docker-compose.yml](./docker-compose.yml)).
 
-- `proxy` (egress-proxy/): an HTTPS proxy (mitmproxy) that decrypts every request and only lets through the allowed hosts and methods. Git over HTTPS is fetch-only, without credentials.
-- `git-relay` (git-relay/): an SSH server that the container's `git@github.com:` remotes are redirected to. It only lets through fetches from and pushes to the allowed repos, and pushes to the allowed branches, then relays them to GitHub using my laptop's SSH agent. Claude never sees the key or any GitHub credentials.
+### Network Isolation
 
-Decision logs, readable from inside the container:
+#### HTTPS
+
+All outbound HTTPS requests go through [mitmproxy](https://www.mitmproxy.org/), which enforces the strict whitelist defined in [`egress-policy.toml`](./egress-proxy/egress-policy.toml).
+
+> [!TIP]
+> Claude Code doesn't need the container to have unrestricted Internet access to do web searches; these are handled directly on Anthropic's end. Meaning, I only need to whitelist Anthropic's domains.
+
+> [!NOTE]
+> Git over HTTPS is fetch-only, without credentials.
+
+#### SSH
+
+Outbound SSH connections to `git@github.com` are redirected to the `git-relay` container. It only allows fetches and pushes for the allowed repositories, and pushes only to the allowed branches, as defined in [egress-policy.toml](./egress-proxy/egress-policy.toml).
+
+The SSH key is never exposed to Claude Code or anything outside the `git-relay` container.
+
+#### Logs
+
+Logs of allow/deny decisions, readable from inside the container:
 
 - `/etc/egress-proxy/egress.log` for HTTPS
-- `/etc/git-relay/relay.log` for git
+- `/etc/git-relay/relay.log` for git (SSH)
+
+## Requirements
+
+- VSCode with the Dev Containers extension (ms-vscode-remote.remote-containers). <sup><sub>Unfortunately, support for devcontainers isn't good enough (yet?) in VSCodium 🥲</sub></sup>
+- A running Docker daemon
 
 ## Setup
 
-- The SSH agent on the laptop must have my GitHub key loaded (`ssh-add -l`). The git relay gets it from OrbStack / Docker Desktop at `/run/host-services/ssh-auth.sock`.
-- In VS Code's user settings: `"dev.containers.gitCredentialHelperConfigLocation": "none"`, so the Mac's git credentials aren't passed to the container.
+- The SSH agent on the host must have the GitHub key loaded (`ssh-add -l`). The git relay reaches the agent through through the socket that OrbStack / Docker Desktop exposes at `/run/host-services/ssh-auth.sock`.
+- In VS Code's user settings: `"dev.containers.gitCredentialHelperConfigLocation": "none"` so that the host's git credentials aren't passed to the container.
+
+## 🏗️ TODO
+
+1. Prevent code execution through git hooks
+2. Write a TODO list
+3. ???
+4. Profit.
