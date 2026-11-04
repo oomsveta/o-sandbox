@@ -2,13 +2,12 @@
   "name": "Odoo",
   "dockerComposeFile": "docker-compose.yml",
   "service": "odoo",
-  "runServices": ["odoo", "db", "proxy"],
+  "runServices": ["odoo", "db", "proxy", "git-relay"],
   "shutdownAction": "stopCompose",
   "workspaceFolder": "/odoo",
   "remoteUser": "dev",
 
-  // Don't expose the host's SSH agent. Git goes over HTTPS through the
-  // egress proxy, which holds the GitHub token.
+  // Don't expose the host's SSH agent: only the git relay gets it.
   "remoteEnv": {
     "SSH_AUTH_SOCK": ""
   },

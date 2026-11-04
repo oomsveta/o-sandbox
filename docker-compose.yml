@@ -41,16 +41,20 @@ services:
       - claude-config:/home/dev/.claude
       # Proxy CA certificate and decision log
       - egress-state:/etc/egress-proxy:ro
+      # Git relay: login key, host key and decision log
+      - git-relay-shared:/etc/git-relay:ro
     depends_on:
       db:
         condition: service_started
       proxy:
         condition: service_healthy
+      git-relay:
+        condition: service_healthy
     networks:
       - internal
 
   proxy:
-    # TLS-intercepting proxy enforcing egress-proxy/policy.py.
+    # TLS-intercepting proxy enforcing egress-proxy/egress-policy.toml.
     image: mitmproxy/mitmproxy:12.2.3@sha256:00b77b5d8804c8ad18cb6caefbf9d5849e895e8986c5ce011f4ae30f4385962f
     entrypoint: ["/bin/sh", "/addons/start.sh"]
     volumes:
@@ -58,10 +62,34 @@ services:
       # CA certificate *and private key*: never mounted in the dev container.
       - mitmproxy-conf:/home/mitmproxy/.mitmproxy
       - egress-state:/srv/egress
-    secrets:
-      - github_token
     healthcheck:
       test: ["CMD", "test", "-s", "/srv/egress/ca.crt"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    networks:
+      - internal
+      - egress
+
+  git-relay:
+    # SSH server for git: checks fetches and pushes against
+    # egress-proxy/egress-policy.toml and relays them to GitHub using the
+    # Mac's SSH agent, which the dev container never sees.
+    build:
+      context: ./git-relay
+    entrypoint: ["/bin/sh", "/relay/start.sh"]
+    environment:
+      DEV_UID: "1000"  # owner of the login key; the dev user's uid
+    volumes:
+      - ./git-relay:/relay:ro
+      - ./egress-proxy:/policy:ro
+      # Relay host key: never mounted in the dev container.
+      - git-relay-keys:/srv/git-relay-keys
+      - git-relay-shared:/srv/git-relay-shared
+      # The Mac's SSH agent, as provided by OrbStack and Docker Desktop.
+      - /run/host-services/ssh-auth.sock:/run/host-services/ssh-auth.sock
+    healthcheck:
+      test: ["CMD", "test", "-s", "/srv/git-relay-shared/known_hosts"]
       interval: 2s
       timeout: 2s
       retries: 30
@@ -86,15 +114,9 @@ networks:
   internal:
     name: odoo-dev-internal
     internal: true
-  # Only the proxy is attached to this one.
+  # Only the proxy and the git relay are attached to this one.
   egress:
     name: odoo-dev-egress
-
-secrets:
-  # A fine-grained GitHub token, kept on the host and only given to the proxy.
-  # The file must exist; leave it empty to only reach public repos.
-  github_token:
-    file: ${HOME}/.config/odoo-devcontainer/github-token
 
 volumes:
   pg-data:
@@ -102,3 +124,5 @@ volumes:
   claude-config:
   mitmproxy-conf:
   egress-state:
+  git-relay-keys:
+  git-relay-shared:

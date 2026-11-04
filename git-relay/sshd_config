@@ -1,0 +1,31 @@
+# SSH server of the git relay. Its only purpose is to let the dev container
+# run relay.py: no shell, no forwarding, no files.
+
+Port 22
+HostKey /srv/git-relay-keys/ssh_host_ed25519_key
+
+AllowUsers git
+PermitRootLogin no
+AuthenticationMethods publickey
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+# Written by start.sh from the dev container's key, with the "restrict" option.
+AuthorizedKeysFile /etc/ssh/git_authorized_keys
+UsePAM no
+
+# Whatever command is asked for, run relay.py; it reads the request from
+# SSH_ORIGINAL_COMMAND.
+ForceCommand /usr/bin/python3 -I /relay/relay.py
+# git sends GIT_PROTOCOL=version=2 for its faster fetch protocol.
+AcceptEnv GIT_PROTOCOL
+
+DisableForwarding yes
+PermitTTY no
+PermitTunnel no
+PermitUserEnvironment no
+PermitUserRC no
+PrintMotd no
+# No Subsystem line: no sftp.
+
+LogLevel INFO

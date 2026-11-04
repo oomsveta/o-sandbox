@@ -1,0 +1,76 @@
+# What the dev container may reach on the internet.
+# Changes apply on the next request or git command; no restart needed.
+# Anything not allowed here is refused. The decisions are logged in the dev
+# container at /etc/egress-proxy/egress.log (HTTPS) and
+# /etc/git-relay/relay.log (git over SSH).
+#
+# Used by both the HTTPS proxy (policy.py) and the git relay
+# (../git-relay/relay.py), through egress_policy.py.
+
+# ---------------------------------------------------------------------------
+# HTTPS hosts
+# ---------------------------------------------------------------------------
+# Each rule:
+#   host     "example.com" matches that host only; ".example.com" matches it
+#            and all of its subdomains. Only HTTPS on port 443.
+#   methods  list of HTTP methods, or "*" for any method.
+#   path     optional path prefix; the rule only applies to paths under it.
+#
+# Git traffic to github.com is governed by [git] below, not by these rules.
+
+allow = [
+    # Claude Code: API, login, claude.ai connectors
+    { host = ".anthropic.com", methods = "*" },
+    { host = ".claude.ai", methods = "*" },
+    { host = ".claude.com", methods = "*" },
+
+    # Python packages (read-only: no uploads)
+    { host = "pypi.org", methods = ["GET", "HEAD"] },
+    { host = "files.pythonhosted.org", methods = ["GET", "HEAD"] },
+
+    # npm packages (read-only: no `npm publish`)
+    { host = "registry.npmjs.org", methods = ["GET", "HEAD"] },
+
+    # VS Code server and extensions
+    { host = "update.code.visualstudio.com", methods = ["GET", "HEAD"] },
+    { host = "vscode.download.prss.microsoft.com", methods = ["GET", "HEAD"] },
+    { host = "main.vscode-cdn.net", methods = ["GET", "HEAD"] },
+    { host = "marketplace.visualstudio.com", methods = ["GET", "HEAD"] },
+    { host = "marketplace.visualstudio.com", methods = ["POST"], path = "/_apis/public/gallery/extensionquery" },
+    { host = ".gallery.vsassets.io", methods = ["GET", "HEAD"] },
+    { host = ".gallerycdn.vsassets.io", methods = ["GET", "HEAD"] },
+
+    # GitHub: read-only browsing, never authenticated
+    { host = "github.com", methods = ["GET", "HEAD"] },
+    { host = "raw.githubusercontent.com", methods = ["GET", "HEAD"] },
+]
+
+# ---------------------------------------------------------------------------
+# Git (GitHub)
+# ---------------------------------------------------------------------------
+# Inside the dev container, git@github.com: remotes go through the git relay,
+# which authenticates with the Mac's SSH agent. https://github.com/ remotes
+# go through the HTTPS proxy without credentials, so they can only fetch
+# public repos, and never push.
+
+[git]
+# Repos ("owner/name") git may fetch from.
+fetch = [
+    "odoo/odoo",
+    "odoo/enterprise",
+    "odoo/o-sfu",
+    "odoo-dev/odoo",
+    "odoo-dev/enterprise",
+]
+# Repos git may push to (over SSH only). They may also be fetched from.
+push = [
+    "odoo-dev/odoo",
+    "odoo-dev/enterprise",
+]
+# Refs a push may update: a Python regex that must match the whole ref.
+# Odoo dev branches end with the author's trigram, e.g. master-fix-foo-wil.
+push_refs = 'refs/heads/[\w./-]+-wil'
+# Whether a push may delete refs (that match push_refs).
+# Force pushes can't be told apart from regular ones; use GitHub branch
+# protection if that matters.
+push_allow_delete = false

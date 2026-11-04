@@ -60,10 +60,12 @@ COPY zshrc /home/${USERNAME}/.zshrc
 RUN echo "alias obin='/odoo/community/odoo-bin --addons-path=/odoo/community/addons,/odoo/enterprise'" >> /home/${USERNAME}/.zshrc \
     && chown ${USERNAME}:${USERNAME} /home/${USERNAME}/.zshrc
 
-# Git reaches GitHub over HTTPS only, through the egress proxy (no SSH
-# route out of the container). Rewrites existing git@github.com remotes.
-RUN git config --system url."https://github.com/".insteadOf "git@github.com:" \
-    && git config --system --add url."https://github.com/".insteadOf "ssh://git@github.com/"
+# git@github.com: remotes go to the git relay, which checks them against the
+# policy and authenticates with the Mac's SSH agent (see git-relay/).
+# https://github.com/ remotes go through the egress proxy, fetch-only.
+COPY git-relay/client_ssh_config /etc/ssh/ssh_config.d/git-relay.conf
+RUN git config --system url."git-relay:".insteadOf "git@github.com:" \
+    && git config --system --add url."git-relay:".insteadOf "ssh://git@github.com/"
 
 # claude
 COPY managed-settings.json /etc/claude-code/managed-settings.json

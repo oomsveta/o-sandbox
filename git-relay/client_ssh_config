@@ -1,0 +1,9 @@
+# Installed in the dev container as /etc/ssh/ssh_config.d/git-relay.conf.
+# git@github.com: remotes are redirected to git-relay (see the Dockerfile).
+Host git-relay
+    User git
+    IdentityFile /etc/git-relay/client_key
+    IdentitiesOnly yes
+    UserKnownHostsFile /etc/git-relay/known_hosts
+    StrictHostKeyChecking yes
+    ForwardAgent no
