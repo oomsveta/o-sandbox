@@ -1,0 +1,78 @@
+# ---------------------------------------------------------------------------
+# Completion
+# ---------------------------------------------------------------------------
+
+# Load zsh's completion system and initialize it.
+#   autoload: mark compinit as a function to load from zsh's function path the
+#             first time it's called (zsh ships many features this way).
+#   -U:       don't expand my aliases while loading the function's code.
+#   -z:       load it zsh-style (as opposed to ksh-style).
+#   compinit: sets up Tab completion for commands, options, files, etc.
+autoload -Uz compinit && compinit
+
+# How typed text is matched against completions. Each quoted rule is tried in
+# order; if one finds nothing, the next, looser one is tried.
+#   'm:{a-z}={A-Z}'
+#       Case-insensitive: a lowercase letter I type also matches the
+#       uppercase one. "doc<Tab>" completes "Documents".
+#   'r:|[._-]=* r:|=*'
+#       Partial words: anything may be filled in before a ".", "_" or "-",
+#       and at the end. "f_b<Tab>" completes "foo_bar".
+#   'l:|=* r:|=*'
+#       Substring: what I typed may appear anywhere in the word.
+#       "bar<Tab>" completes "foobar".
+zstyle ':completion:*' matcher-list 'm:{a-z}={A-Z}' 'r:|[._-]=* r:|=*' 'l:|=* r:|=*'
+
+# ---------------------------------------------------------------------------
+# Shell behavior
+# ---------------------------------------------------------------------------
+
+# Offer to fix mistyped command names ("gti" -> "git?") before running them.
+setopt CORRECT
+# ...but never suggest zsh's internal completion functions, which all start
+# with "_" (otherwise "cowsay" can get "corrected" to "_cowsay").
+CORRECT_IGNORE='_*'
+
+# Typing just a directory name changes into it: ".." acts like
+# "cd ..".
+setopt autocd
+
+# ---------------------------------------------------------------------------
+# Prompt with the current git branch
+# ---------------------------------------------------------------------------
+
+# Re-evaluate variables inside PROMPT every time it's displayed. Needed for
+# ${vcs_info_msg_0_} below to show the current branch instead of the branch
+# at the moment this file was read.
+setopt PROMPT_SUBST
+
+# Load vcs_info, zsh's built-in helper that reads version-control state
+# (branch, etc.) for the current directory.
+autoload -Uz vcs_info
+
+# precmd is a special function zsh runs right before drawing each prompt.
+# Here it refreshes vcs_info, which stores its result in $vcs_info_msg_0_.
+precmd() { vcs_info }
+
+# For git repos, format that result as the branch name (%b) in parentheses.
+# Outside a repo, $vcs_info_msg_0_ is empty, so nothing is shown.
+zstyle ':vcs_info:git:*' formats '(%b)'
+
+# The prompt itself. Single quotes on purpose: the variable must be expanded
+# at display time (thanks to PROMPT_SUBST), not once when this line runs.
+#   %F{33}...%f   text in color 33 (blue); %f resets the color
+#   %n            username
+#   @             a literal @
+#   %F{28}%m%f    hostname, in green (in the container: its ID)
+#   %F{166}%~%f   current directory in orange, with $HOME shown as ~
+#   %F{125}...%f  the git branch from vcs_info, in magenta
+#   %#            "#" when running as root, "%" otherwise
+# Result: dev@o-jail /odoo/enterprise(master) %
+PROMPT='%F{33}%n%f@%F{28}%m%f %F{166}%~%f%F{125}${vcs_info_msg_0_}%f %# '
+
+# ---------------------------------------------------------------------------
+# Greeting
+# ---------------------------------------------------------------------------
+
+# Print a random quote, said by an ASCII-art cow, in every new terminal.
+fortune | cowsay

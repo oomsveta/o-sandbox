@@ -1,0 +1,42 @@
+{
+  "name": "Odoo",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "odoo",
+  "runServices": ["odoo", "db", "proxy"],
+  "shutdownAction": "stopCompose",
+  "workspaceFolder": "/odoo",
+  "remoteUser": "dev",
+
+  // Don't expose the host's SSH agent. Git goes over HTTPS through the
+  // egress proxy, which holds the GitHub token.
+  "remoteEnv": {
+    "SSH_AUTH_SOCK": ""
+  },
+
+  "features": {
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "anthropic.claude-code",
+        "charliermarsh.ruff",
+        "ms-python.debugpy",
+        "ms-python.python",
+        "Odoo.odoo",
+        "Odoo.owl-vision"
+      ],
+      "settings": {
+        "python.terminal.activateEnvironment": false,
+        "ruff.lineLength": 100,
+        "telemetry.telemetryLevel": "off",
+        "terminal.integrated.defaultProfile.linux": "zsh"
+      }
+    }
+  },
+
+  "forwardPorts": [8069, 8072],
+
+  "postCreateCommand": "pip install --upgrade pip wheel && pip install -r /odoo/community/requirements.txt"
+}

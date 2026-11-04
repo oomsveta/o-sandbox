@@ -1,0 +1,104 @@
+services:
+  odoo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    hostname: o-jail
+    # PID 1 runs as root only to trust the egress proxy's CA, then idles.
+    # VS Code attaches as `dev` (remoteUser).
+    command:
+      - sh
+      - -c
+      - >-
+        install -m 644 /etc/egress-proxy/ca.crt /usr/local/share/ca-certificates/egress-proxy.crt
+        && update-ca-certificates >/dev/null
+        && exec sleep infinity
+    environment:
+      PGHOST: db
+      PGUSER: odoo
+      PGPASSWORD: odoo
+      # The proxy is the only route out (the `internal` network has none).
+      HTTP_PROXY: http://proxy:8080
+      HTTPS_PROXY: http://proxy:8080
+      http_proxy: http://proxy:8080
+      https_proxy: http://proxy:8080
+      NO_PROXY: localhost,127.0.0.1,::1,db
+      no_proxy: localhost,127.0.0.1,::1,db
+      # Clients that don't use the system CA store.
+      NODE_EXTRA_CA_CERTS: /etc/egress-proxy/ca.crt
+      REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
+      SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
+      PIP_CERT: /etc/ssl/certs/ca-certificates.crt
+      # Claude Code is installed by the devcontainer feature at build time.
+      DISABLE_AUTOUPDATER: "1"
+    volumes:
+      # The only host directories mounted into the container
+      - /Users/wil/Dev/odoo/community:/odoo/community:cached
+      - /Users/wil/Dev/odoo/enterprise:/odoo/enterprise:cached
+      - /Users/wil/Dev/odoo/rsfu:/odoo/rsfu:cached
+      # Docker-managed volumes
+      - odoo-filestore:/home/dev/.local/share/Odoo
+      - claude-config:/home/dev/.claude
+      # Proxy CA certificate and decision log
+      - egress-state:/etc/egress-proxy:ro
+    depends_on:
+      db:
+        condition: service_started
+      proxy:
+        condition: service_healthy
+    networks:
+      - internal
+
+  proxy:
+    # TLS-intercepting proxy enforcing egress-proxy/policy.py.
+    image: mitmproxy/mitmproxy:12.2.3@sha256:00b77b5d8804c8ad18cb6caefbf9d5849e895e8986c5ce011f4ae30f4385962f
+    entrypoint: ["/bin/sh", "/addons/start.sh"]
+    volumes:
+      - ./egress-proxy:/addons:ro
+      # CA certificate *and private key*: never mounted in the dev container.
+      - mitmproxy-conf:/home/mitmproxy/.mitmproxy
+      - egress-state:/srv/egress
+    secrets:
+      - github_token
+    healthcheck:
+      test: ["CMD", "test", "-s", "/srv/egress/ca.crt"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    networks:
+      - internal
+      - egress
+
+  db:
+    # pgvector is needed by AI modules
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: odoo
+      POSTGRES_DB: postgres
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    networks:
+      - internal
+
+networks:
+  # No route to the outside world.
+  internal:
+    name: odoo-dev-internal
+    internal: true
+  # Only the proxy is attached to this one.
+  egress:
+    name: odoo-dev-egress
+
+secrets:
+  # A fine-grained GitHub token, kept on the host and only given to the proxy.
+  # The file must exist; leave it empty to only reach public repos.
+  github_token:
+    file: ${HOME}/.config/odoo-devcontainer/github-token
+
+volumes:
+  pg-data:
+  odoo-filestore:
+  claude-config:
+  mitmproxy-conf:
+  egress-state:
