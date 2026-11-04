@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    hostname: o-jail
+    hostname: o-sandbox
     # PID 1 runs as root only to trust the egress proxy's CA, then idles.
     # VS Code attaches as `dev` (remoteUser).
     command:
