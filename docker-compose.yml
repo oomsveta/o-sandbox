@@ -34,10 +34,12 @@ services:
       # Disable the auto-update since it won't work anyways.
       DISABLE_AUTOUPDATER: "1"
     volumes:
-      # The only host directories mounted into the container
-      - /Users/wil/Dev/odoo/community:/odoo/community:cached
-      - /Users/wil/Dev/odoo/enterprise:/odoo/enterprise:cached
-      - /Users/wil/Dev/odoo/rsfu:/odoo/rsfu:cached
+      # The only host directories mounted into the container. Relative paths
+      # resolve from this file's folder (.devcontainer/), so the repos are
+      # expected next to it, in the project folder.
+      - ../community:/odoo/community:cached
+      - ../enterprise:/odoo/enterprise:cached
+      - ../rsfu:/odoo/rsfu:cached
       # Docker-managed volumes
       - odoo-filestore:/home/dev/.local/share/Odoo
       - claude-config:/home/dev/.claude
