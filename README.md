@@ -15,11 +15,11 @@ This is my sandboxed setup for Odoo development with Claude Code inside VS Code 
 ├── Dockerfile           dev container image, built from the files below
 ├── odoo/                odoo.conf, seed-repos.sh (sets up the repos in the container)
 ├── claude/              Claude Code managed settings
-├── dotfiles/            shell and editor config
+├── dotfiles/            shell config
 └── egress/              network sandbox: the only ways out of the dev container
     ├── policy/          what's allowed (policy.toml) and its parser, shared by:
-    ├── proxy/           mitmproxy addon enforcing it for HTTPS
-    └── git-relay/       SSH server enforcing it for git, with its own GitHub key
+    ├── https-proxy/     mitmproxy addon enforcing it for HTTPS (filter.py)
+    └── git-relay/       SSH server enforcing it for git (relay.py), with its own GitHub key
 ```
 
 The database (`db`) uses the stock pgvector image.
@@ -55,7 +55,7 @@ Then [Odoo's JS tooling](https://github.com/odoo/odoo/tree/master/addons/web/too
 
 #### HTTPS
 
-All outbound HTTPS requests go through [mitmproxy](https://www.mitmproxy.org/), which enforces the strict whitelist defined in [`policy.toml`](./egress/policy/policy.toml).
+All outbound HTTPS requests go through [mitmproxy](https://www.mitmproxy.org/), which enforces the strict whitelist defined in [`policy.toml`](./egress/policy/policy.toml). Edits to it apply right away; while it's invalid, everything is refused.
 
 > [!TIP]
 > Claude Code doesn't need the container to have unrestricted Internet access to do web searches; these are handled directly on Anthropic's end. Meaning, I only need to whitelist Anthropic's domains.
@@ -107,7 +107,7 @@ The whole of `.anthropic.com` is allowed, for any method, because Claude Code ne
 
 Logs of allow/deny decisions, readable from inside the container:
 
-- `/etc/egress-proxy/egress.log` for HTTPS
+- `/etc/https-proxy/egress.log` for HTTPS
 - `/etc/git-relay/relay.log` for git (SSH)
 
 ## Requirements

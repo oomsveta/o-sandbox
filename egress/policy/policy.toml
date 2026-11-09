@@ -1,10 +1,13 @@
 # What the dev container may reach on the internet.
-# Changes apply on the next request or git command; no restart needed.
+#
+# Changes apply on the next request or git command; no restart needed. While
+# this file is invalid, everything is refused (see the HTTPS proxy's log).
+#
 # Anything not allowed here is refused. The decisions are logged in the dev
-# container at /etc/egress-proxy/egress.log (HTTPS) and
+# container at /etc/https-proxy/egress.log (HTTPS) and
 # /etc/git-relay/relay.log (git over SSH).
 #
-# Used by both the HTTPS proxy (../proxy/policy.py) and the git relay
+# Used by both the HTTPS proxy (../https-proxy/filter.py) and the git relay
 # (../git-relay/relay.py), through egress_policy.py.
 
 # ---------------------------------------------------------------------------

@@ -3,42 +3,36 @@ services:
     build:
       context: .
     hostname: o-sandbox
-    # PID 1 runs as root only to trust the egress proxy's CA, then idles.
+    # PID 1 runs as root only to trust the HTTPS proxy's CA, then idles.
     # VS Code attaches as `dev` (remoteUser).
     command:
       - sh
       - -c
       - >-
-        install -m 644 /etc/egress-proxy/ca.crt /usr/local/share/ca-certificates/egress-proxy.crt
+        install -m 644 /etc/https-proxy/ca.crt /usr/local/share/ca-certificates/https-proxy.crt
         && update-ca-certificates >/dev/null
         && exec sleep infinity
     environment:
       PGHOST: db
       PGUSER: odoo
       PGPASSWORD: odoo
-      # The proxy is the only route out (the `internal` network has none).
-      HTTP_PROXY: http://proxy:8080
-      HTTPS_PROXY: http://proxy:8080
-      http_proxy: http://proxy:8080
-      https_proxy: http://proxy:8080
+      # The HTTPS proxy is the only route out (the `internal` network has none).
+      HTTP_PROXY: http://https-proxy:8080
+      HTTPS_PROXY: http://https-proxy:8080
+      http_proxy: http://https-proxy:8080
+      https_proxy: http://https-proxy:8080
       NO_PROXY: localhost,127.0.0.1,::1,db
       no_proxy: localhost,127.0.0.1,::1,db
       # Clients that don't use the system CA store.
-      NODE_EXTRA_CA_CERTS: /etc/egress-proxy/ca.crt
+      NODE_EXTRA_CA_CERTS: /etc/https-proxy/ca.crt
       REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
       SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
       PIP_CERT: /etc/ssl/certs/ca-certificates.crt
-      # Claude Code normally updates itself in the background, but it can't from
-      # within the container, as it gets installed in a root-owned folder.
-      # Disable the auto-update since it won't work anyways.
+      # Claude Code can't update itself: it's installed in a root-owned folder.
       DISABLE_AUTOUPDATER: "1"
     volumes:
-      # The only host directory mounted into the container: the project
-      # folder, the parent of this file's folder (.devcontainer/), read-only.
-      # seed-repos.sh sets up the container's own clones from the repos in
-      # it, borrowing their objects (see "Git repositories" in the README).
-      # The whole folder rather than each repo's .git, as Docker would create
-      # missing mount sources on the host, as empty folders.
+      # The only host folder mounted in the dev container, read-only: the
+      # project folder, for seed-repos (see "Git repositories" in the README).
       - ..:/host:ro
       # The container's own clones. Never mounted on the host.
       - src:/odoo
@@ -46,25 +40,25 @@ services:
       - odoo-filestore:/home/dev/.local/share/Odoo
       - claude-config:/home/dev/.claude
       # Proxy CA certificate and decision log
-      - egress-state:/etc/egress-proxy:ro
+      - egress-state:/etc/https-proxy:ro
       # Git relay: login key, host key and decision log
       - git-relay-shared:/etc/git-relay:ro
     depends_on:
       db:
         condition: service_started
-      proxy:
+      https-proxy:
         condition: service_healthy
       git-relay:
         condition: service_healthy
     networks:
       - internal
 
-  proxy:
+  https-proxy:
     # TLS-intercepting proxy enforcing egress/policy/policy.toml.
     image: mitmproxy/mitmproxy:12.2.3@sha256:00b77b5d8804c8ad18cb6caefbf9d5849e895e8986c5ce011f4ae30f4385962f
-    entrypoint: ["/bin/sh", "/addons/start.sh"]
+    entrypoint: ["/bin/sh", "/https-proxy/start.sh"]
     volumes:
-      - ./egress/proxy:/addons:ro
+      - ./egress/https-proxy:/https-proxy:ro
       - ./egress/policy:/policy:ro
       # CA certificate *and private key*: never mounted in the dev container.
       - mitmproxy-conf:/home/mitmproxy/.mitmproxy
@@ -81,13 +75,10 @@ services:
   git-relay:
     # SSH server for git: checks fetches and pushes against
     # egress/policy/policy.toml and relays them to GitHub with an SSH key that
-    # only this container can read: the host's (GIT_RELAY_SSH_KEY), or its
-    # own.
+    # only this container can read.
     build:
       context: ./egress/git-relay
     entrypoint: ["/bin/sh", "/relay/start.sh"]
-    environment:
-      DEV_UID: "1000"  # owner of the login key; the dev user's uid
     volumes:
       - ./egress/git-relay:/relay:ro
       - ./egress/policy:/policy:ro
@@ -131,7 +122,7 @@ networks:
   internal:
     name: odoo-dev-internal
     internal: true
-  # Only the proxy and the git relay are attached to this one.
+  # Only the HTTPS proxy and the git relay are attached to this one.
   egress:
     name: odoo-dev-egress
 

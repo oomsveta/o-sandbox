@@ -1,11 +1,9 @@
 """
-Egress policy shared by the HTTPS proxy (../proxy/policy.py, a
-mitmproxy addon) and the git relay (../git-relay/relay.py). Standard library
-only.
+The egress policy, from policy.toml next to this file. Shared by the HTTPS
+proxy (../https-proxy/filter.py) and the git relay (../git-relay/relay.py).
 
-The policy lives in policy.toml next to this file. It is re-read
-whenever it changes; if it becomes invalid, the last valid version stays in
-effect, and if it is missing (or was never valid), everything is denied.
+policy.toml is re-read whenever it changes. While it's missing or invalid,
+everything is denied.
 """
 
 import logging
@@ -15,19 +13,16 @@ from pathlib import Path
 from typing import NamedTuple
 
 POLICY_FILE = Path(__file__).with_name("policy.toml")
+HTTP_METHODS = {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
+REPO = re.compile(r"[a-z0-9][a-z0-9_.-]*/[a-z0-9_.-]+")  # "owner/name", lowercase
 
-HTTP_METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
-REPO = re.compile(r"[a-z0-9][a-z0-9_.-]*/[a-z0-9_.-]+")
-GIT_SERVICES = ("git-upload-pack", "git-receive-pack")
-
-# A child of the "egress" logger that policy.py and relay.py log to.
 log = logging.getLogger("egress.policy")
 
 
 class HostRule(NamedTuple):
     host: str  # "example.com", or ".example.com" for it and its subdomains
     methods: frozenset | None  # None: any method
-    path_prefix: str
+    path: str  # path prefix
 
     def matches_host(self, host):
         if self.host.startswith("."):
@@ -35,209 +30,130 @@ class HostRule(NamedTuple):
         return host == self.host
 
 
-class GitPolicy(NamedTuple):
-    fetch: frozenset
-    push: frozenset
-    push_refs: re.Pattern
-    push_allow_delete: bool
-
-
 class Policy(NamedTuple):
-    hosts: tuple
-    git: GitPolicy
+    hosts: tuple = ()  # HostRules
+    fetch: frozenset = frozenset()  # repos git may fetch from
+    push: frozenset = frozenset()  # repos git may push to (and fetch from)
+    push_refs: re.Pattern = re.compile(r"(?!)")  # refs a push may update
+    push_allow_delete: bool = False
+
+    def host_known(self, host):
+        """Whether any rule is about `host`."""
+        return any(rule.matches_host(host) for rule in self.hosts)
+
+    def host_allows(self, host, method, path):
+        return any(
+            rule.matches_host(host)
+            and (rule.methods is None or method in rule.methods)
+            and path.startswith(rule.path)
+            for rule in self.hosts
+        )
+
+    def git_denial(self, service, repo):
+        """Why git `service` may not run on `repo`, or None if it may."""
+        if service == "git-upload-pack":
+            if repo not in self.fetch | self.push:
+                return f"fetching from {repo} is not allowed (git.fetch)"
+        elif service == "git-receive-pack":
+            if repo not in self.push:
+                return f"pushing to {repo} is not allowed (git.push)"
+        else:
+            return f"git service {service!r} is not allowed"
+        return None
+
+    def push_denials(self, updates):
+        """Why a push's ref updates, [(new object id, ref)], may not happen."""
+        denials = []
+        for new, ref in updates:
+            if not self.push_refs.fullmatch(ref):
+                denials.append(f"{ref} does not match git.push_refs")
+            elif set(new) == {"0"} and not self.push_allow_delete:
+                denials.append(f"deleting {ref} is not allowed (git.push_allow_delete)")
+        return denials
 
 
-DENY_ALL = Policy((), GitPolicy(frozenset(), frozenset(), re.compile(r"(?!)"), False))
+DENY_ALL = Policy()
+
+
+def repo_name(path):
+    """ "/Owner/Name.git" -> "owner/name", or None if `path` isn't a repo's."""
+    repo = path.strip("/").lower().removesuffix(".git")
+    return repo if REPO.fullmatch(repo) and ".." not in repo else None
 
 
 # ---------------------------------------------------------------------------
 # Loading
 # ---------------------------------------------------------------------------
-
-
-def _names(keys):
-    return ", ".join(sorted(keys))
-
-
-def _parse_hosts(entries):
-    if not isinstance(entries, list):
-        raise TypeError("`allow` must be a list")
-    rules = []
-    for number, entry in enumerate(entries, 1):
-        where = f"allow rule {number}"
-        if not isinstance(entry, dict):
-            raise TypeError(f"{where}: expected {{ host = ..., methods = ... }}")
-        where += f" ({entry.get('host', 'no host')})"
-        if unknown := set(entry) - {"host", "methods", "path"}:
-            raise ValueError(f"{where}: unknown key(s) {_names(unknown)}")
-
-        host = entry.get("host")
-        if not isinstance(host, str) or not host.strip("."):
-            raise ValueError(f"{where}: `host` must be a non-empty string")
-
-        methods = entry.get("methods")
-        if methods == "*":
-            methods = None
-        elif isinstance(methods, list) and methods and all(isinstance(m, str) for m in methods):
-            methods = frozenset(m.upper() for m in methods)
-            if unknown := methods - HTTP_METHODS:
-                raise ValueError(f"{where}: unknown method(s) {_names(unknown)}")
-        else:
-            raise ValueError(f'{where}: `methods` must be "*" or a non-empty list of methods')
-
-        path = entry.get("path", "/")
-        if not isinstance(path, str) or not path.startswith("/"):
-            raise ValueError(f"{where}: `path` must start with /")
-
-        rules.append(HostRule(host.lower(), methods, path))
-    return tuple(rules)
-
-
-def _parse_repos(git, key):
-    repos = git.get(key, [])
-    if not isinstance(repos, list):
-        raise TypeError(f"git.{key} must be a list")
-    result = set()
-    for repo in repos:
-        if not isinstance(repo, str) or not REPO.fullmatch(repo.lower()):
-            raise ValueError(f'git.{key}: {repo!r} is not an "owner/name" repo')
-        result.add(repo.lower())
-    return frozenset(result)
-
-
-def _parse_git(git):
-    if not isinstance(git, dict):
-        raise TypeError("[git] must be a table")
-    if unknown := set(git) - {"fetch", "push", "push_refs", "push_allow_delete"}:
-        raise ValueError(f"[git]: unknown key(s) {_names(unknown)}")
-
-    push_refs = git.get("push_refs", "(?!)")
-    if not isinstance(push_refs, str):
-        raise TypeError("git.push_refs must be a string")
-    try:
-        push_refs = re.compile(push_refs)
-    except re.error as e:
-        raise ValueError(f"git.push_refs is not a valid regex ({e})") from None
-
-    allow_delete = git.get("push_allow_delete", False)
-    if not isinstance(allow_delete, bool):
-        raise TypeError("git.push_allow_delete must be true or false")
-
-    return GitPolicy(_parse_repos(git, "fetch"), _parse_repos(git, "push"), push_refs, allow_delete)
+# Values of the wrong type make parse() raise some exception or other (e.g.
+# AttributeError: 'int' object has no attribute 'lower'). Only the mistakes
+# that wouldn't are checked explicitly.
 
 
 def parse(text):
-    """Parse policy.toml.
-
-    Raises ValueError, or TypeError for a value of the wrong type.
-    """
-    data = tomllib.loads(text)  # TOMLDecodeError is a ValueError
-    if unknown := set(data) - {"allow", "git"}:
-        raise ValueError(f"unknown top-level key(s): {_names(unknown)}")
-    return Policy(_parse_hosts(data.get("allow", [])), _parse_git(data.get("git", {})))
-
-
-_cache = {"mtime": None, "policy": DENY_ALL}
-
-
-def current():
-    """The policy from policy.toml, re-read whenever the file changes."""
-    try:
-        mtime = POLICY_FILE.stat().st_mtime_ns
-    except OSError as e:
-        log.error("cannot read %s (%s), denying everything", POLICY_FILE, e)
-        return DENY_ALL
-    if mtime != _cache["mtime"]:
-        _cache["mtime"] = mtime
-        try:
-            _cache["policy"] = policy = parse(POLICY_FILE.read_text())
-            log.info(
-                "loaded %s: %d host rules, %d fetch / %d push repos",
-                POLICY_FILE.name,
-                len(policy.hosts),
-                len(policy.git.fetch),
-                len(policy.git.push),
-            )
-        except (OSError, ValueError, TypeError) as e:
-            log.error("%s: %s; keeping the previous policy", POLICY_FILE.name, e)
-    return _cache["policy"]
-
-
-# ---------------------------------------------------------------------------
-# Checks
-# ---------------------------------------------------------------------------
-
-
-def host_known(policy, host):
-    return any(r.matches_host(host) for r in policy.hosts)
-
-
-def host_allows(policy, host, method, path):
-    return any(
-        r.matches_host(host)
-        and (r.methods is None or method in r.methods)
-        and path.startswith(r.path_prefix)
-        for r in policy.hosts
+    """The Policy in `text`, policy.toml's content. Raises if it's invalid."""
+    data = tomllib.loads(text)
+    _check_keys(data, {"allow", "git"}, "policy.toml")
+    git = data.get("git", {})
+    _check_keys(git, {"fetch", "push", "push_refs", "push_allow_delete"}, "[git]")
+    allow_delete = git.get("push_allow_delete", False)
+    if not isinstance(allow_delete, bool):  # "false" would be truthy
+        raise ValueError("git.push_allow_delete must be true or false")
+    return Policy(
+        hosts=tuple(_host_rule(rule) for rule in data.get("allow", [])),
+        fetch=_repos(git.get("fetch", [])),
+        push=_repos(git.get("push", [])),
+        push_refs=re.compile(git.get("push_refs", r"(?!)")),
+        push_allow_delete=allow_delete,
     )
 
 
-def normalize_repo(path):
-    """ "/Owner/Name.git" -> "owner/name", or None if it isn't a repo path."""
-    repo = path.strip("/").lower()
-    repo = repo.removesuffix(".git")
-    if REPO.fullmatch(repo) and ".." not in repo:
-        return repo
-    return None
+def _check_keys(table, allowed, where):
+    # Catches typos, which would otherwise be silently ignored.
+    if unknown := set(table) - allowed:
+        raise ValueError(f"{where}: unknown key(s) {', '.join(sorted(unknown))}")
 
 
-def git_denial(policy, service, repo):
-    """Why `service` (git-upload-pack or git-receive-pack) may not run on
-    `repo`, or None if it may."""
-    if service == "git-upload-pack":
-        if repo not in policy.git.fetch | policy.git.push:
-            return f"fetching from {repo} is not allowed (git.fetch)"
-    elif service == "git-receive-pack":
-        if repo not in policy.git.push:
-            return f"pushing to {repo} is not allowed (git.push)"
+def _host_rule(rule):
+    host = rule["host"].lower()
+    _check_keys(rule, {"host", "methods", "path"}, f"allow rule for {host!r}")
+    if not host.strip("."):
+        raise ValueError("allow rule with an empty host")
+    if rule["methods"] == "*":
+        methods = None
     else:
-        return f"git service {service!r} is not allowed"
-    return None
+        methods = frozenset(method.upper() for method in rule["methods"])
+        if unknown := methods - HTTP_METHODS:
+            raise ValueError(f"allow rule for {host!r}: unknown method(s) {', '.join(unknown)}")
+    path = rule.get("path", "/")
+    if not path.startswith("/"):
+        raise ValueError(f"allow rule for {host!r}: path must start with /")
+    return HostRule(host, methods, path)
 
 
-def receive_pack_commands(data):
-    """Ref updates at the start of a git-receive-pack request.
-
-    The client sends pkt-lines "<old-oid> <new-oid> <ref>", the first one
-    followed by "\\0<capabilities>", terminated by a flush packet "0000".
-    The packfile follows. Raises ValueError on anything unexpected.
-    """
-    commands = []
-    i = 0
-    while i + 4 <= len(data):
-        size = int(data[i : i + 4], 16)
-        if size == 0:
-            return commands
-        if size < 4 or i + size > len(data):
-            raise ValueError("bad pkt-line length")
-        line = data[i + 4 : i + size].split(b"\0", 1)[0].rstrip(b"\n").decode()
-        i += size
-        if line.startswith("shallow "):
-            continue
-        old, new, ref = line.split(" ", 2)
-        commands.append((old, new, ref))
-    raise ValueError("no flush packet")
+def _repos(repos):
+    repos = frozenset(repo.lower() for repo in repos)
+    if invalid := [repo for repo in repos if not REPO.fullmatch(repo)]:
+        raise ValueError(f'not "owner/name" repos: {", ".join(invalid)}')
+    return repos
 
 
-def push_problems(policy, data):
-    """Reasons to refuse the ref updates at the start of `data` (empty if none)."""
+_loaded = (None, DENY_ALL)  # (policy.toml's mtime, its Policy)
+
+
+def current():
+    """The Policy in policy.toml, re-read whenever the file changes."""
+    global _loaded
     try:
-        commands = receive_pack_commands(data)
-    except ValueError as e:
-        return [f"unparseable push request ({e})"]
-    problems = []
-    for _old, new, ref in commands:
-        if not policy.git.push_refs.fullmatch(ref):
-            problems.append(f"{ref} does not match git.push_refs")
-        elif set(new) == {"0"} and not policy.git.push_allow_delete:
-            problems.append(f"deleting {ref} is not allowed (git.push_allow_delete)")
-    return problems
+        mtime = POLICY_FILE.stat().st_mtime_ns
+    except OSError as e:
+        log.error("%s, denying everything", e)
+        return DENY_ALL
+    if mtime != _loaded[0]:
+        try:
+            policy = parse(POLICY_FILE.read_text())
+            log.info("loaded %s", POLICY_FILE)
+        except Exception as e:
+            log.error("invalid %s, denying everything: %s", POLICY_FILE, e)
+            policy = DENY_ALL
+        _loaded = (mtime, policy)
+    return _loaded[1]

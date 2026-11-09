@@ -1,18 +1,16 @@
 """
-Forced command of the git relay's SSH server (see sshd_config): every SSH
-connection from the dev container runs this script, whatever it asked for.
+The git relay's forced command (see sshd_config): every SSH connection from
+the dev container runs this, whatever command it asked for.
 
-The dev container's git@github.com: remotes point here instead of GitHub.
-This script reads the git command that was asked for (SSH_ORIGINAL_COMMAND),
-checks it against policy.toml, and runs it at GitHub over SSH,
-authenticating with the key start.sh set up (the host's, or the relay's
-own), which nothing outside this container can read. For a push, it first reads the ref
-updates the client sends and refuses the push, before any data reaches
-GitHub, if one of them isn't allowed.
+The dev container's git@github.com: remotes point here. This reads the git
+command asked for (SSH_ORIGINAL_COMMAND), checks it against policy.toml, and
+runs it at GitHub over SSH, with the key start.sh set up, which nothing
+outside this container can read. A push's ref updates are checked before
+anything reaches GitHub.
 
-Decisions are logged to /srv/git-relay-shared/relay.log, which the dev
-container can read at /etc/git-relay/relay.log. Anything written to stderr
-is shown to the git user in the dev container.
+Decisions are logged to /srv/git-relay-shared/relay.log
+(/etc/git-relay/relay.log in the dev container). Anything written to stderr
+is shown by git in the dev container.
 """
 
 import logging
@@ -22,153 +20,137 @@ import shlex
 import subprocess
 import sys
 
-sys.path.insert(0, "/policy")
+sys.path.insert(0, "/policy")  # ../policy/
 import egress_policy
 
 LOG_FILE = "/srv/git-relay-shared/relay.log"
-GITHUB_KEY = "/run/git-relay/github_key"  # see start.sh
-GITHUB_KNOWN_HOSTS = "/etc/ssh/github_known_hosts"
-# Ref updates are a few hundred bytes each; anything bigger is refused.
-MAX_COMMANDS_SIZE = 1 << 20
-# GIT_PROTOCOL as sent by git, e.g. "version=2".
-GIT_PROTOCOL = re.compile(r"[A-Za-z0-9=:._-]{1,64}")
+GITHUB_KEY = "/run/git-relay/github_key"  # set up by start.sh
+# A push's ref updates take a few hundred bytes each: refuse more than this.
+MAX_UPDATES_SIZE = 1 << 20
+GIT_PROTOCOL = re.compile(r"[A-Za-z0-9=:._-]{1,64}")  # as sent by git: "version=2"
+
+# Runs a command at GitHub. -F /dev/null: no ssh_config, only these options.
+SSH_TO_GITHUB = [
+    "ssh", "-F", "/dev/null",
+    "-o", "BatchMode=yes",
+    "-o", "UserKnownHostsFile=/etc/ssh/github_known_hosts",
+    "-o", "GlobalKnownHostsFile=/dev/null",
+    "-o", "StrictHostKeyChecking=yes",
+    "-o", "UpdateHostKeys=no",
+    "-i", GITHUB_KEY,
+    "-o", "IdentitiesOnly=yes",
+    "-o", "IdentityAgent=none",
+    "-o", "ForwardAgent=no",
+    "-o", "ClearAllForwardings=yes",
+]  # fmt: skip
+SSH_ENV = {"PATH": "/usr/bin:/bin", "HOME": os.environ.get("HOME", "/")}
 
 log = logging.getLogger("egress.relay")
 
 
-def setup_log():
-    logging.getLogger("egress").propagate = False
-    log.setLevel(logging.INFO)
-    # The policy logs every (re)load, i.e. every connection here: only
-    # keep its errors.
-    logging.getLogger("egress.policy").setLevel(logging.WARNING)
-    try:
-        handler = logging.FileHandler(LOG_FILE)
-    except OSError:
-        handler = logging.NullHandler()  # never fall back to stderr
-    handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
-    logging.getLogger("egress").addHandler(handler)
-
-
 def refuse(reason):
     log.warning("DENY  %s: %s", os.environ.get("SSH_ORIGINAL_COMMAND", ""), reason)
-    sys.stderr.write(
-        f"git-relay: {reason}\nPolicy: .devcontainer/egress/policy/policy.toml\n"
-    )
+    print(f"git-relay: {reason}\nPolicy: .devcontainer/egress/policy/policy.toml", file=sys.stderr)
     return 1
 
 
-def upstream_command(service, repo):
-    """The command that runs `service` on `repo` at GitHub."""
-    command = [
-        "ssh",
-        "-F", "/dev/null",  # ignore ssh_config files
-        "-o", "BatchMode=yes",
-        "-o", f"UserKnownHostsFile={GITHUB_KNOWN_HOSTS}",
-        "-o", "GlobalKnownHostsFile=/dev/null",
-        "-o", "StrictHostKeyChecking=yes",
-        "-o", "UpdateHostKeys=no",
-        "-i", GITHUB_KEY,
-        "-o", "IdentitiesOnly=yes",
-        "-o", "IdentityAgent=none",
-        "-o", "ForwardAgent=no",
-        "-o", "ClearAllForwardings=yes",
-    ]  # fmt: skip
-    protocol = os.environ.get("GIT_PROTOCOL", "")
-    if GIT_PROTOCOL.fullmatch(protocol):
-        command += ["-o", f"SetEnv=GIT_PROTOCOL={protocol}"]
-    # `repo` matched egress_policy.REPO, so it needs no further quoting.
-    return [*command, "git@github.com", f"{service} '{repo}.git'"]
-
-
-def upstream_env():
-    return {
-        "PATH": "/usr/bin:/bin",
-        "HOME": os.environ.get("HOME", "/"),
-    }
-
-
 def read_exact(fd, size):
-    data = bytearray()
-    while len(data) < size:
-        chunk = os.read(fd, size - len(data))
-        if not chunk:
-            break
+    data = b""
+    while len(data) < size and (chunk := os.read(fd, size - len(data))):
         data += chunk
-    return bytes(data)
+    if len(data) < size:
+        raise ValueError("unexpected end of input")
+    return data
 
 
-def read_commands(fd):
-    """The pkt-lines the client sends up to the first flush packet, as raw
-    bytes. Stops early at EOF, on garbage, or past MAX_COMMANDS_SIZE: what
-    was read then fails to parse, and the push is refused."""
-    data = bytearray()
-    while len(data) < MAX_COMMANDS_SIZE:
+def read_ref_updates(fd):
+    """Reads the ref updates at the start of a push, from the client.
+
+    They are pkt-lines: a 4-digit hex length (itself included), then
+    "<old object id> <new object id> <ref>", with "\\0<capabilities>" after
+    the first one, and a flush packet ("0000") after the last one. The pack
+    follows. Returns (the raw bytes read, [(new object id, ref)]). Raises
+    ValueError on anything unexpected.
+    """
+    raw, updates = b"", []
+    while len(raw) < MAX_UPDATES_SIZE:
         header = read_exact(fd, 4)
-        data += header
-        try:
-            size = int(header, 16)
-        except ValueError:
-            break
-        if size < 4:  # flush (0) or invalid
-            break
-        data += read_exact(fd, size - 4)
-    return bytes(data)
+        raw += header
+        size = int(header, 16)
+        if size == 0:
+            return raw, updates
+        if size < 4:
+            raise ValueError("bad pkt-line length")
+        line = read_exact(fd, size - 4)
+        raw += line
+        line = line.split(b"\0", 1)[0].rstrip(b"\n").decode()
+        if not line.startswith("shallow "):  # sent first by shallow clones
+            _old, new, ref = line.split(" ", 2)
+            updates.append((new, ref))
+    raise ValueError("too many ref updates")
 
 
-def relay_push(policy, repo, argv):
-    # GitHub's output goes straight to the client: it first advertises its
-    # refs, and only then does the client send its ref updates.
-    upstream = subprocess.Popen(argv, stdin=subprocess.PIPE, env=upstream_env())
+def push(policy, repo, command):
+    # GitHub's output goes straight to the client: GitHub first advertises its
+    # refs, and only then does the client send its ref updates, then the pack.
+    github = subprocess.Popen(command, stdin=subprocess.PIPE, env=SSH_ENV)
     try:
-        commands = read_commands(0)
-        if problems := egress_policy.push_problems(policy, commands):
-            upstream.kill()
-            upstream.wait()
-            return refuse("; ".join(problems))
-        refs = [ref for _, _, ref in egress_policy.receive_pack_commands(commands)]
-        log.info("ALLOW push to %s: %s", repo, ", ".join(refs) or "nothing")
+        try:
+            raw, updates = read_ref_updates(0)
+            denials = policy.push_denials(updates)
+        except ValueError as e:
+            denials = [f"unparseable push ({e})"]
+        if denials:
+            github.kill()
+            github.wait()
+            return refuse("; ".join(denials))
+        log.info("ALLOW push to %s: %s", repo, ", ".join(ref for _, ref in updates) or "nothing")
 
-        upstream.stdin.write(commands)
+        github.stdin.write(raw)
         while chunk := os.read(0, 1 << 16):
-            upstream.stdin.write(chunk)
-        upstream.stdin.close()
+            github.stdin.write(chunk)
+        github.stdin.close()
     except BrokenPipeError:
-        pass  # GitHub hung up; its exit status tells the client why
+        pass  # GitHub hung up: its own messages and exit status tell the client why
     except BaseException:
-        upstream.kill()
+        github.kill()
         raise
-    return upstream.wait()
+    return github.wait()
 
 
 def main():
-    setup_log()
     try:
         service, path = shlex.split(os.environ.get("SSH_ORIGINAL_COMMAND", ""))
     except ValueError:
         return refuse("only git fetch and push are supported")
-    repo = egress_policy.normalize_repo(path)
+    repo = egress_policy.repo_name(path)
     if repo is None:
         return refuse(f"{path!r} is not a GitHub repo path")
-
     policy = egress_policy.current()
-    if reason := egress_policy.git_denial(policy, service, repo):
+    if reason := policy.git_denial(service, repo):
         return refuse(reason)
-
     if not os.path.exists(GITHUB_KEY):
         return refuse("the relay has no usable GitHub key, see its logs")
 
-    argv = upstream_command(service, repo)
+    command = SSH_TO_GITHUB.copy()
+    protocol = os.environ.get("GIT_PROTOCOL", "")
+    if GIT_PROTOCOL.fullmatch(protocol):
+        command += ["-o", f"SetEnv=GIT_PROTOCOL={protocol}"]
+    # `repo` matched egress_policy.REPO, so it needs no further quoting.
+    command += ["git@github.com", f"{service} '{repo}.git'"]
+
     if service == "git-upload-pack":
         log.info("ALLOW fetch from %s", repo)
-        os.execvpe(argv[0], argv, upstream_env())
-    return relay_push(policy, repo, argv)
+        os.execve("/usr/bin/ssh", command, SSH_ENV)
+    return push(policy, repo, command)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(filename=LOG_FILE, format="%(asctime)s %(message)s", level=logging.INFO)
+    # The policy logs each time it's loaded, which here is every connection.
+    logging.getLogger("egress.policy").setLevel(logging.WARNING)
     try:
         sys.exit(main())
     except Exception:
         log.exception("relay error")
-        sys.stderr.write("git-relay: internal error, see /etc/git-relay/relay.log\n")
-        sys.exit(1)
+        sys.exit("git-relay: internal error, see /etc/git-relay/relay.log")

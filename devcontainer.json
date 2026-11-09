@@ -2,8 +2,6 @@
   "name": "Odoo",
   "dockerComposeFile": "docker-compose.yml",
   "service": "odoo",
-  "runServices": ["odoo", "db", "proxy", "git-relay"],
-  "shutdownAction": "stopCompose",
   "workspaceFolder": "/odoo",
   "remoteUser": "dev",
 
@@ -40,7 +38,6 @@
 
   "forwardPorts": [8069, 8072],
 
-  "postAttachCommand": "check-ssh-agent",
-
-  "postCreateCommand": "seed-repos; pip install --upgrade pip wheel && pip install -r /odoo/community/requirements.txt"
+  "postCreateCommand": "seed-repos; pip install --upgrade pip wheel && pip install -r /odoo/community/requirements.txt",
+  "postAttachCommand": "check-ssh-agent"
 }
