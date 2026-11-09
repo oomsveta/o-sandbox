@@ -80,8 +80,9 @@ services:
 
   git-relay:
     # SSH server for git: checks fetches and pushes against
-    # egress/policy/policy.toml and relays them to GitHub using the
-    # Mac's SSH agent, which the dev container never sees.
+    # egress/policy/policy.toml and relays them to GitHub with an SSH key that
+    # only this container can read: the host's (GIT_RELAY_SSH_KEY), or its
+    # own.
     build:
       context: ./egress/git-relay
     entrypoint: ["/bin/sh", "/relay/start.sh"]
@@ -90,11 +91,20 @@ services:
     volumes:
       - ./egress/git-relay:/relay:ro
       - ./egress/policy:/policy:ro
-      # Relay host key: never mounted in the dev container.
+      # Relay host key and GitHub key: never mounted anywhere else.
       - git-relay-keys:/srv/git-relay-keys
       - git-relay-shared:/srv/git-relay-shared
-      # The Mac's SSH agent, as provided by OrbStack and Docker Desktop.
-      - /run/host-services/ssh-auth.sock:/run/host-services/ssh-auth.sock
+      # Optional: the host's own GitHub SSH key (passphrase-less), to use
+      # instead of the relay's. Set GIT_RELAY_SSH_KEY to its absolute path,
+      # e.g. in .devcontainer/.env. Mounted here only.
+      - type: bind
+        source: ${GIT_RELAY_SSH_KEY:-./egress/git-relay/no-ssh-key}
+        target: /run/secrets/github_key
+        read_only: true
+        bind:
+          # A wrong path is an error, rather than an empty folder created
+          # at that path on the host.
+          create_host_path: false
     healthcheck:
       test: ["CMD", "test", "-s", "/srv/git-relay-shared/known_hosts"]
       interval: 2s

@@ -1,0 +1,2 @@
+No SSH key: the git relay uses its own. Set GIT_RELAY_SSH_KEY to use the
+host's instead (see docker-compose.yml).

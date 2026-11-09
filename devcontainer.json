@@ -7,7 +7,10 @@
   "workspaceFolder": "/odoo",
   "remoteUser": "dev",
 
-  // Don't expose the host's SSH agent: only the git relay gets it.
+  // VS Code forwards the host's SSH agent into the container no matter what
+  // (/tmp/vscode-ssh-auth-*.sock). This only keeps tools from finding it: the
+  // host's agent must stay empty (see "SSH" in the README), which
+  // check-ssh-agent checks.
   "remoteEnv": {
     "SSH_AUTH_SOCK": ""
   },
@@ -36,6 +39,8 @@
   },
 
   "forwardPorts": [8069, 8072],
+
+  "postAttachCommand": "check-ssh-agent",
 
   "postCreateCommand": "seed-repos; pip install --upgrade pip wheel && pip install -r /odoo/community/requirements.txt"
 }

@@ -19,7 +19,7 @@ This is my sandboxed setup for Odoo development with Claude Code inside VS Code 
 └── egress/              network sandbox: the only ways out of the dev container
     ├── policy/          what's allowed (policy.toml) and its parser, shared by:
     ├── proxy/           mitmproxy addon enforcing it for HTTPS
-    └── git-relay/       SSH server enforcing it for git, with the Mac's SSH agent
+    └── git-relay/       SSH server enforcing it for git, with its own GitHub key
 ```
 
 The database (`db`) uses the stock pgvector image.
@@ -34,7 +34,7 @@ Claude Code (or any other malicious program running in the container) can't acce
 
 The container works in its own clones of the Odoo repos, in a Docker volume, and never writes to the repos on the host.
 
-**Why:** git runs commands from a repo's config and hooks. A container that could write to a host repo could make the host run anything the next time git touches it, e.g. via `core.fsmonitor` (run by every `git status`, so as soon as a shell prompt or editor opens the folder) or a hook (Odoo's repos point `core.hooksPath` inside the working tree). That would escape the sandbox, with the host's SSH agent, credentials and unrestricted Internet access.
+**Why:** git runs commands from a repo's config and hooks. A container that could write to a host repo could make the host run anything the next time git touches it, e.g. via `core.fsmonitor` (run by every `git status`, so as soon as a shell prompt or editor opens the folder) or a hook (Odoo's repos point `core.hooksPath` inside the working tree). That would escape the sandbox, with the host's SSH keys, credentials and unrestricted Internet access.
 
 **How:** the project folder (the parent of `.devcontainer/`) is mounted read-only at `/host`. On container creation, [seed-repos.sh](./odoo/seed-repos.sh) sets up each repo in its `REPOS` that isn't in `/odoo` yet:
 
@@ -67,7 +67,37 @@ All outbound HTTPS requests go through [mitmproxy](https://www.mitmproxy.org/), 
 
 Outbound SSH connections to `git@github.com` are redirected to the `git-relay` container. It only allows fetches and pushes for the allowed repositories, and pushes only to the allowed branches, as defined in [policy.toml](./egress/policy/policy.toml).
 
-The SSH key is never exposed to Claude Code or anything outside the `git-relay` container.
+The relay authenticates to GitHub with an SSH key that nothing outside the `git-relay` container can read: the dev container only gets its public key (`/etc/git-relay/github_key.pub`). By default, it's the relay's own key, generated on its first start in its own Docker volume, which is never mounted anywhere else.
+
+To use the host's own key instead, set `GIT_RELAY_SSH_KEY` to its absolute path, e.g. in `.devcontainer/.env` (gitignored):
+
+```
+GIT_RELAY_SSH_KEY=/Users/wil/.ssh/id_ed25519
+```
+
+It's mounted, read-only, into the `git-relay` container only. It must not have a passphrase, as the relay has no way to type it: if it does, the relay says so in its logs and git over SSH doesn't work. It must not be in the project folder either, which the dev container can read (`/host`).
+
+**Tradeoffs:**
+
+- **The key has no passphrase**: the relay's own sits unencrypted in a Docker volume, the host's in its file. Anyone with access to the Docker daemon on the host can read it.
+- **GitHub can't restrict an account's SSH key to some repos**: the key can do whatever my GitHub account can. Only the relay's policy narrows it down.
+- **The relay's own key is the safer choice**: it can be revoked on its own if the relay is ever compromised, and it only exists for GitHub. The host's key is typically also used elsewhere (other servers, commit signing), and revoking it means replacing it everywhere.
+
+##### The host's SSH agent must stay empty
+
+VS Code's Dev Containers extension forwards the host's SSH agent into the dev container, as `/tmp/vscode-ssh-auth-*.sock`, and there's no setting to turn that off. [devcontainer.json](./devcontainer.json) blanks `SSH_AUTH_SOCK`, but that only hides the socket: anything in the container can still find it and have the agent sign with the host's keys, e.g. to log in to GitHub as me, or to sign commits.
+
+So the host's agent holds no keys. Git on the host uses its key file directly, with the passphrase from the macOS Keychain, instead of going through the agent:
+
+```
+# ~/.ssh/config on the host
+Host github.com
+    IdentityFile ~/.ssh/id_ed25519
+    UseKeychain yes
+    AddKeysToAgent no
+```
+
+then `ssh-add -D` to empty the agent, and nothing that refills it at login (e.g. `ssh-add --apple-load-keychain` in a shell rc). `check-ssh-agent` warns, loudly, whenever VS Code attaches and in every new terminal, if the forwarded agent holds keys.
 
 #### Known gap: exfiltration through Anthropic's API
 
@@ -96,7 +126,8 @@ Logs of allow/deny decisions, readable from inside the container:
   └── rsfu/
   ```
   and open `odoo/` in VS Code. The repos are optional: the container clones those the host doesn't have from GitHub (which takes longer). Those it does have must be regular clones (with a `.git` folder, not a `git worktree`). The repos and their remotes are listed in `REPOS` at the top of [seed-repos.sh](./odoo/seed-repos.sh).
-- The SSH agent on the host must have the GitHub key loaded (`ssh-add -l`). The git relay reaches the agent through through the socket that OrbStack / Docker Desktop exposes at `/run/host-services/ssh-auth.sock`.
+- Add the git relay's GitHub key to your GitHub account (Settings → SSH and GPG keys), and authorize it for SSO for organizations that require it (e.g. odoo). Its public key is printed in the relay's logs on start, and readable in the dev container: `cat /etc/git-relay/github_key.pub`. Until then, git over SSH fails with `Permission denied (publickey)`. Or use your own key (see [SSH](#ssh)).
+- Keep the host's SSH agent empty (see [The host's SSH agent must stay empty](#the-hosts-ssh-agent-must-stay-empty)).
 - In VS Code's user settings: `"dev.containers.gitCredentialHelperConfigLocation": "none"` so that the host's git credentials aren't passed to the container.
 
 ## 🏗️ TODO

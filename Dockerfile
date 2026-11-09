@@ -57,11 +57,13 @@ RUN groupadd --gid ${USER_GID} ${USERNAME} \
     && chmod 0440 /etc/sudoers.d/${USERNAME}
 
 COPY dotfiles/zshrc /home/${USERNAME}/.zshrc
+# Warns if VS Code forwards an SSH agent that holds keys (zshrc, postAttachCommand)
+COPY dotfiles/check-ssh-agent.sh /usr/local/bin/check-ssh-agent
 RUN echo "alias obin='/odoo/community/odoo-bin --addons-path=/odoo/community/addons,/odoo/enterprise'" >> /home/${USERNAME}/.zshrc \
     && chown ${USERNAME}:${USERNAME} /home/${USERNAME}/.zshrc
 
 # git@github.com: remotes go to the git relay, which checks them against the
-# policy and authenticates with the Mac's SSH agent (see egress/git-relay/).
+# policy and authenticates with its own key (see egress/git-relay/).
 # https://github.com/ remotes go through the egress proxy, fetch-only.
 COPY egress/git-relay/client_ssh_config /etc/ssh/ssh_config.d/git-relay.conf
 RUN git config --system url."git-relay:".insteadOf "git@github.com:" \

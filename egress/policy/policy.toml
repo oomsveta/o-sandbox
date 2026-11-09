@@ -49,7 +49,7 @@ allow = [
 # Git (GitHub)
 # ---------------------------------------------------------------------------
 # Inside the dev container, git@github.com: remotes go through the git relay,
-# which authenticates with the Mac's SSH agent. https://github.com/ remotes
+# which authenticates with its own SSH key. https://github.com/ remotes
 # go through the HTTPS proxy without credentials, so they can only fetch
 # public repos, and never push.
 

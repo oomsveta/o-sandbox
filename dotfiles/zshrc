@@ -76,3 +76,6 @@ PROMPT='%F{33}%n%f@%F{28}%m%f %F{166}%~%f%F{125}${vcs_info_msg_0_}%f %# '
 
 # Print a random quote, said by an ASCII-art cow, in every new terminal.
 fortune | cowsay
+
+# Warn, loudly, if the host's SSH agent (forwarded by VS Code) holds keys.
+check-ssh-agent

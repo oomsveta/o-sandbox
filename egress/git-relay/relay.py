@@ -5,7 +5,8 @@ connection from the dev container runs this script, whatever it asked for.
 The dev container's git@github.com: remotes point here instead of GitHub.
 This script reads the git command that was asked for (SSH_ORIGINAL_COMMAND),
 checks it against policy.toml, and runs it at GitHub over SSH,
-authenticating with the Mac's SSH agent. For a push, it first reads the ref
+authenticating with the key start.sh set up (the host's, or the relay's
+own), which nothing outside this container can read. For a push, it first reads the ref
 updates the client sends and refuses the push, before any data reaches
 GitHub, if one of them isn't allowed.
 
@@ -25,7 +26,7 @@ sys.path.insert(0, "/policy")
 import egress_policy
 
 LOG_FILE = "/srv/git-relay-shared/relay.log"
-AGENT_SOCK = "/run/git-relay/agent.sock"
+GITHUB_KEY = "/run/git-relay/github_key"  # see start.sh
 GITHUB_KNOWN_HOSTS = "/etc/ssh/github_known_hosts"
 # Ref updates are a few hundred bytes each; anything bigger is refused.
 MAX_COMMANDS_SIZE = 1 << 20
@@ -67,6 +68,9 @@ def upstream_command(service, repo):
         "-o", "GlobalKnownHostsFile=/dev/null",
         "-o", "StrictHostKeyChecking=yes",
         "-o", "UpdateHostKeys=no",
+        "-i", GITHUB_KEY,
+        "-o", "IdentitiesOnly=yes",
+        "-o", "IdentityAgent=none",
         "-o", "ForwardAgent=no",
         "-o", "ClearAllForwardings=yes",
     ]  # fmt: skip
@@ -81,7 +85,6 @@ def upstream_env():
     return {
         "PATH": "/usr/bin:/bin",
         "HOME": os.environ.get("HOME", "/"),
-        "SSH_AUTH_SOCK": AGENT_SOCK,
     }
 
 
@@ -151,6 +154,9 @@ def main():
     policy = egress_policy.current()
     if reason := egress_policy.git_denial(policy, service, repo):
         return refuse(reason)
+
+    if not os.path.exists(GITHUB_KEY):
+        return refuse("the relay has no usable GitHub key, see its logs")
 
     argv = upstream_command(service, repo)
     if service == "git-upload-pack":

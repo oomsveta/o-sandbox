@@ -2,8 +2,8 @@
 
 set -eu
 
-# Entrypoint of the git relay container (runs as root): prepares the keys,
-# the log and the SSH agent socket, then runs the SSH server.
+# Entrypoint of the git relay container (runs as root): prepares the keys
+# and the log, then runs the SSH server.
 
 KEYS=/srv/git-relay-keys      # private to this container
 SHARED=/srv/git-relay-shared  # read-only in the dev container, at /etc/git-relay
@@ -34,14 +34,39 @@ touch "$SHARED/relay.log"
 chown git:git "$SHARED/relay.log"
 chmod 644 "$SHARED/relay.log"
 
-# The Mac's SSH agent, re-exposed for the git user only.
-HOST_AGENT=/run/host-services/ssh-auth.sock
+# The key relay.py authenticates to GitHub with, readable by the git user
+# (that relay.py runs as) only, outside of any volume: the host's own key if
+# one is mounted (GIT_RELAY_SSH_KEY, see docker-compose.yml), otherwise the
+# relay's own, generated once and kept in this container's volume. Either way,
+# it never leaves this container: only its public key does.
+HOST_KEY=/run/secrets/github_key
+ACTIVE_KEY=/run/git-relay/github_key  # see relay.py
 install -d -o git -g git -m 700 /run/git-relay
-if [ -S "$HOST_AGENT" ]; then
-    socat "UNIX-LISTEN:/run/git-relay/agent.sock,fork,user=git,group=git,mode=600" \
-        "UNIX-CONNECT:$HOST_AGENT" &
+rm -f "$ACTIVE_KEY" "$SHARED/github_key.pub"
+if grep -q "PRIVATE KEY" "$HOST_KEY" 2>/dev/null; then
+    install -o git -g git -m 600 "$HOST_KEY" "$ACTIVE_KEY"
+    # -P '': fails instead of prompting if the key has a passphrase.
+    if public_key=$(ssh-keygen -y -P '' -f "$ACTIVE_KEY" 2>/dev/null); then
+        echo "Using the host's SSH key (GIT_RELAY_SSH_KEY): $public_key" >&2
+    else
+        rm -f "$ACTIVE_KEY"
+        public_key=""
+        echo "error: the host's SSH key (GIT_RELAY_SSH_KEY) has a passphrase, which" \
+            "the git relay can't type: git over SSH won't work. See the README." >&2
+    fi
 else
-    echo "warning: no SSH agent at $HOST_AGENT, git can't authenticate to GitHub" >&2
+    install -d -o git -g git -m 700 "$KEYS/github"
+    if [ ! -f "$KEYS/github/id_ed25519" ]; then
+        ssh-keygen -q -t ed25519 -N '' -C "o-sandbox git relay" -f "$KEYS/github/id_ed25519"
+    fi
+    install -o git -g git -m 600 "$KEYS/github/id_ed25519" "$ACTIVE_KEY"
+    public_key=$(cat "$KEYS/github/id_ed25519.pub")
+    echo "GitHub key of the git relay, to add to your GitHub account: $public_key" >&2
+fi
+# Readable in the dev container at /etc/git-relay/github_key.pub.
+if [ -n "$public_key" ]; then
+    echo "$public_key" > "$SHARED/github_key.pub"
+    chmod 644 "$SHARED/github_key.pub"
 fi
 
 # Written last: the dev container waits for it (see the healthcheck).
