@@ -48,6 +48,15 @@ Logs of allow/deny decisions, readable from inside the container:
 
 ## Setup
 
+- Clone this repo as `.devcontainer/` in a project folder, next to the Odoo repos that get mounted into the container:
+  ```
+  odoo/
+  ├── .devcontainer/   ← this repo
+  ├── community/
+  ├── enterprise/
+  └── rsfu/
+  ```
+  and open `odoo/` in VS Code.
 - The SSH agent on the host must have the GitHub key loaded (`ssh-add -l`). The git relay reaches the agent through through the socket that OrbStack / Docker Desktop exposes at `/run/host-services/ssh-auth.sock`.
 - In VS Code's user settings: `"dev.containers.gitCredentialHelperConfigLocation": "none"` so that the host's git credentials aren't passed to the container.
 
