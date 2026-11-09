@@ -4,7 +4,7 @@ connection from the dev container runs this script, whatever it asked for.
 
 The dev container's git@github.com: remotes point here instead of GitHub.
 This script reads the git command that was asked for (SSH_ORIGINAL_COMMAND),
-checks it against egress-policy.toml, and runs it at GitHub over SSH,
+checks it against policy.toml, and runs it at GitHub over SSH,
 authenticating with the Mac's SSH agent. For a push, it first reads the ref
 updates the client sends and refuses the push, before any data reaches
 GitHub, if one of them isn't allowed.
@@ -52,7 +52,7 @@ def setup_log():
 def refuse(reason):
     log.warning("DENY  %s: %s", os.environ.get("SSH_ORIGINAL_COMMAND", ""), reason)
     sys.stderr.write(
-        f"git-relay: {reason}\nPolicy: .devcontainer/egress-proxy/egress-policy.toml\n"
+        f"git-relay: {reason}\nPolicy: .devcontainer/egress/policy/policy.toml\n"
     )
     return 1
 

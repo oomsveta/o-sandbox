@@ -4,7 +4,7 @@
 # container at /etc/egress-proxy/egress.log (HTTPS) and
 # /etc/git-relay/relay.log (git over SSH).
 #
-# Used by both the HTTPS proxy (policy.py) and the git relay
+# Used by both the HTTPS proxy (../proxy/policy.py) and the git relay
 # (../git-relay/relay.py), through egress_policy.py.
 
 # ---------------------------------------------------------------------------

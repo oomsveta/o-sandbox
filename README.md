@@ -6,6 +6,24 @@
 
 This is my sandboxed setup for Odoo development with Claude Code inside VS Code devcontainers.
 
+## Layout
+
+```
+.devcontainer/
+├── devcontainer.json    VS Code entry point
+├── docker-compose.yml   the services: dev container, database, and egress/
+├── Dockerfile           dev container image, built from the files below
+├── odoo/                odoo.conf, seed-repos.sh (sets up the repos in the container)
+├── claude/              Claude Code managed settings
+├── dotfiles/            shell and editor config
+└── egress/              network sandbox: the only ways out of the dev container
+    ├── policy/          what's allowed (policy.toml) and its parser, shared by:
+    ├── proxy/           mitmproxy addon enforcing it for HTTPS
+    └── git-relay/       SSH server enforcing it for git, with the Mac's SSH agent
+```
+
+The database (`db`) uses the stock pgvector image.
+
 ## Goals
 
 ### Filesystem Isolation
@@ -18,7 +36,7 @@ The container works in its own clones of the Odoo repos, in a Docker volume, and
 
 **Why:** git runs commands from a repo's config and hooks. A container that could write to a host repo could make the host run anything the next time git touches it, e.g. via `core.fsmonitor` (run by every `git status`, so as soon as a shell prompt or editor opens the folder) or a hook (Odoo's repos point `core.hooksPath` inside the working tree). That would escape the sandbox, with the host's SSH agent, credentials and unrestricted Internet access.
 
-**How:** the project folder (the parent of `.devcontainer/`) is mounted read-only at `/host`. On container creation, [seed-repos.sh](./seed-repos.sh) sets up each repo in its `REPOS` that isn't in `/odoo` yet:
+**How:** the project folder (the parent of `.devcontainer/`) is mounted read-only at `/host`. On container creation, [seed-repos.sh](./odoo/seed-repos.sh) sets up each repo in its `REPOS` that isn't in `/odoo` yet:
 
 - If the host has it: a clone that *borrows* the host's objects through [git alternates](https://git-scm.com/docs/gitrepository-layout#Documentation/gitrepository-layout.txt-objectsinfoalternates), like `git clone --shared`. It takes seconds, copies no history, and gets the host's branches, tags, remotes and checked-out branch, but not its other git config (hooks, aliases…) or uncommitted changes. New objects go to the container's volume.
 - Otherwise: a partial clone (`--filter=blob:none`) from GitHub through the git relay, with the other remotes from `REPOS`. Override with `SEED_CLONE_ARGS` (e.g. `"--depth=1"`) in `containerEnv` in [devcontainer.json](./devcontainer.json).
@@ -37,7 +55,7 @@ Then [Odoo's JS tooling](https://github.com/odoo/odoo/tree/master/addons/web/too
 
 #### HTTPS
 
-All outbound HTTPS requests go through [mitmproxy](https://www.mitmproxy.org/), which enforces the strict whitelist defined in [`egress-policy.toml`](./egress-proxy/egress-policy.toml).
+All outbound HTTPS requests go through [mitmproxy](https://www.mitmproxy.org/), which enforces the strict whitelist defined in [`policy.toml`](./egress/policy/policy.toml).
 
 > [!TIP]
 > Claude Code doesn't need the container to have unrestricted Internet access to do web searches; these are handled directly on Anthropic's end. Meaning, I only need to whitelist Anthropic's domains.
@@ -47,7 +65,7 @@ All outbound HTTPS requests go through [mitmproxy](https://www.mitmproxy.org/), 
 
 #### SSH
 
-Outbound SSH connections to `git@github.com` are redirected to the `git-relay` container. It only allows fetches and pushes for the allowed repositories, and pushes only to the allowed branches, as defined in [egress-policy.toml](./egress-proxy/egress-policy.toml).
+Outbound SSH connections to `git@github.com` are redirected to the `git-relay` container. It only allows fetches and pushes for the allowed repositories, and pushes only to the allowed branches, as defined in [policy.toml](./egress/policy/policy.toml).
 
 The SSH key is never exposed to Claude Code or anything outside the `git-relay` container.
 
@@ -77,7 +95,7 @@ Logs of allow/deny decisions, readable from inside the container:
   ├── enterprise/
   └── rsfu/
   ```
-  and open `odoo/` in VS Code. The repos are optional: the container clones those the host doesn't have from GitHub (which takes longer). Those it does have must be regular clones (with a `.git` folder, not a `git worktree`). The repos and their remotes are listed in `REPOS` at the top of [seed-repos.sh](./seed-repos.sh).
+  and open `odoo/` in VS Code. The repos are optional: the container clones those the host doesn't have from GitHub (which takes longer). Those it does have must be regular clones (with a `.git` folder, not a `git worktree`). The repos and their remotes are listed in `REPOS` at the top of [seed-repos.sh](./odoo/seed-repos.sh).
 - The SSH agent on the host must have the GitHub key loaded (`ssh-add -l`). The git relay reaches the agent through through the socket that OrbStack / Docker Desktop exposes at `/run/host-services/ssh-auth.sock`.
 - In VS Code's user settings: `"dev.containers.gitCredentialHelperConfigLocation": "none"` so that the host's git credentials aren't passed to the container.
 

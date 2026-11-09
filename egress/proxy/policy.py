@@ -5,7 +5,7 @@ mitmdump (see start.sh).
 The dev container sits on an `internal` Docker network with no route to the
 internet; this proxy and the git relay are its only ways out. The container
 trusts our CA, so every HTTPS request is decrypted and checked against
-egress-policy.toml (via egress_policy.py). Anything not allowed gets a 403.
+policy.toml (via egress_policy.py). Anything not allowed gets a 403.
 
 Git over HTTPS is fetch-only and never authenticated: pushes, and fetches
 from private repos, go over SSH through the git relay.
@@ -21,8 +21,11 @@ import logging.handlers
 import os
 import re
 import shutil
+import sys
 from pathlib import Path
 
+# Shared with the git relay (egress/policy/, mounted at /policy).
+sys.path.insert(0, "/policy")
 import egress_policy
 from mitmproxy import ctx, http, tcp
 
@@ -73,7 +76,7 @@ def _deny(flow, reason):
     flow.response = http.Response.make(
         403,
         f"Blocked by the dev container's egress proxy: {reason}\n"
-        "Policy: .devcontainer/egress-proxy/egress-policy.toml\n",
+        "Policy: .devcontainer/egress/policy/policy.toml\n",
         {"Content-Type": "text/plain"},
     )
 
@@ -145,7 +148,7 @@ class EgressPolicy:
 
         if egress_policy.host_allows(policy, host, req.method, path):
             return _allow(flow)
-        _deny(flow, f"{req.method} to {host} is not allowed (egress-policy.toml)")
+        _deny(flow, f"{req.method} to {host} is not allowed (policy.toml)")
 
     def _git(self, flow, policy, repo_path, endpoint):
         req = flow.request

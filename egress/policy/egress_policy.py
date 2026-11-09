@@ -1,8 +1,9 @@
 """
-Egress policy shared by the HTTPS proxy (policy.py, a mitmproxy addon) and
-the git relay (../git-relay/relay.py). Standard library only.
+Egress policy shared by the HTTPS proxy (../proxy/policy.py, a
+mitmproxy addon) and the git relay (../git-relay/relay.py). Standard library
+only.
 
-The policy lives in egress-policy.toml next to this file. It is re-read
+The policy lives in policy.toml next to this file. It is re-read
 whenever it changes; if it becomes invalid, the last valid version stays in
 effect, and if it is missing (or was never valid), everything is denied.
 """
@@ -13,7 +14,7 @@ import tomllib
 from pathlib import Path
 from typing import NamedTuple
 
-POLICY_FILE = Path(__file__).with_name("egress-policy.toml")
+POLICY_FILE = Path(__file__).with_name("policy.toml")
 
 HTTP_METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
 REPO = re.compile(r"[a-z0-9][a-z0-9_.-]*/[a-z0-9_.-]+")
@@ -126,7 +127,7 @@ def _parse_git(git):
 
 
 def parse(text):
-    """Parse egress-policy.toml.
+    """Parse policy.toml.
 
     Raises ValueError, or TypeError for a value of the wrong type.
     """
@@ -140,7 +141,7 @@ _cache = {"mtime": None, "policy": DENY_ALL}
 
 
 def current():
-    """The policy from egress-policy.toml, re-read whenever the file changes."""
+    """The policy from policy.toml, re-read whenever the file changes."""
     try:
         mtime = POLICY_FILE.stat().st_mtime_ns
     except OSError as e:

@@ -56,21 +56,21 @@ RUN groupadd --gid ${USER_GID} ${USERNAME} \
     && echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${USERNAME} \
     && chmod 0440 /etc/sudoers.d/${USERNAME}
 
-COPY zshrc /home/${USERNAME}/.zshrc
+COPY dotfiles/zshrc /home/${USERNAME}/.zshrc
 RUN echo "alias obin='/odoo/community/odoo-bin --addons-path=/odoo/community/addons,/odoo/enterprise'" >> /home/${USERNAME}/.zshrc \
     && chown ${USERNAME}:${USERNAME} /home/${USERNAME}/.zshrc
 
 # git@github.com: remotes go to the git relay, which checks them against the
-# policy and authenticates with the Mac's SSH agent (see git-relay/).
+# policy and authenticates with the Mac's SSH agent (see egress/git-relay/).
 # https://github.com/ remotes go through the egress proxy, fetch-only.
-COPY git-relay/client_ssh_config /etc/ssh/ssh_config.d/git-relay.conf
+COPY egress/git-relay/client_ssh_config /etc/ssh/ssh_config.d/git-relay.conf
 RUN git config --system url."git-relay:".insteadOf "git@github.com:" \
     && git config --system --add url."git-relay:".insteadOf "ssh://git@github.com/"
 
 # claude
-COPY managed-settings.json /etc/claude-code/managed-settings.json
+COPY claude/managed-settings.json /etc/claude-code/managed-settings.json
 
-COPY vimrc /home/${USERNAME}/.vimrc
+COPY dotfiles/vimrc /home/${USERNAME}/.vimrc
 RUN chown ${USERNAME}:${USERNAME} /home/${USERNAME}/.vimrc
 ENV EDITOR=vim
 
@@ -86,8 +86,8 @@ RUN mkdir -p /home/${USERNAME}/.local/share/Odoo /home/${USERNAME}/.claude /odoo
     && chown -R ${USERNAME}:${USERNAME} /home/${USERNAME} /odoo
 
 # Sets up /odoo/<repo> from the host's repos (postCreateCommand)
-COPY seed-repos.sh /usr/local/bin/seed-repos
+COPY odoo/seed-repos.sh /usr/local/bin/seed-repos
 
 # Odoo config (copied into the image, not mounted). ODOO_RC makes odoo-bin pick it up.
-COPY odoo.conf /etc/odoo/odoo.conf
+COPY odoo/odoo.conf /etc/odoo/odoo.conf
 ENV ODOO_RC=/etc/odoo/odoo.conf

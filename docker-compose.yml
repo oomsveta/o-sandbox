@@ -2,7 +2,6 @@ services:
   odoo:
     build:
       context: .
-      dockerfile: Dockerfile
     hostname: o-sandbox
     # PID 1 runs as root only to trust the egress proxy's CA, then idles.
     # VS Code attaches as `dev` (remoteUser).
@@ -61,11 +60,12 @@ services:
       - internal
 
   proxy:
-    # TLS-intercepting proxy enforcing egress-proxy/egress-policy.toml.
+    # TLS-intercepting proxy enforcing egress/policy/policy.toml.
     image: mitmproxy/mitmproxy:12.2.3@sha256:00b77b5d8804c8ad18cb6caefbf9d5849e895e8986c5ce011f4ae30f4385962f
     entrypoint: ["/bin/sh", "/addons/start.sh"]
     volumes:
-      - ./egress-proxy:/addons:ro
+      - ./egress/proxy:/addons:ro
+      - ./egress/policy:/policy:ro
       # CA certificate *and private key*: never mounted in the dev container.
       - mitmproxy-conf:/home/mitmproxy/.mitmproxy
       - egress-state:/srv/egress
@@ -80,16 +80,16 @@ services:
 
   git-relay:
     # SSH server for git: checks fetches and pushes against
-    # egress-proxy/egress-policy.toml and relays them to GitHub using the
+    # egress/policy/policy.toml and relays them to GitHub using the
     # Mac's SSH agent, which the dev container never sees.
     build:
-      context: ./git-relay
+      context: ./egress/git-relay
     entrypoint: ["/bin/sh", "/relay/start.sh"]
     environment:
       DEV_UID: "1000"  # owner of the login key; the dev user's uid
     volumes:
-      - ./git-relay:/relay:ro
-      - ./egress-proxy:/policy:ro
+      - ./egress/git-relay:/relay:ro
+      - ./egress/policy:/policy:ro
       # Relay host key: never mounted in the dev container.
       - git-relay-keys:/srv/git-relay-keys
       - git-relay-shared:/srv/git-relay-shared
