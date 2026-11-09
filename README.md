@@ -30,6 +30,10 @@ Outbound SSH connections to `git@github.com` are redirected to the `git-relay` c
 
 The SSH key is never exposed to Claude Code or anything outside the `git-relay` container.
 
+#### Known gap: exfiltration through Anthropic's API
+
+The whole of `.anthropic.com` is allowed, for any method, because Claude Code needs it. Anything running in the container can therefore send data to the Anthropic API with *someone else's* API key (e.g. upload it with the Files API, or simply put it in a prompt), and that someone can then read it back. The proxy can't tell such requests apart from Claude Code's own without inspecting the API key, which it doesn't do.
+
 #### Logs
 
 Logs of allow/deny decisions, readable from inside the container:
