@@ -37,5 +37,5 @@
 
   "forwardPorts": [8069, 8072],
 
-  "postCreateCommand": "pip install --upgrade pip wheel && pip install -r /odoo/community/requirements.txt"
+  "postCreateCommand": "seed-repos; pip install --upgrade pip wheel && pip install -r /odoo/community/requirements.txt"
 }

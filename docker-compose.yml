@@ -34,12 +34,15 @@ services:
       # Disable the auto-update since it won't work anyways.
       DISABLE_AUTOUPDATER: "1"
     volumes:
-      # The only host directories mounted into the container. Relative paths
-      # resolve from this file's folder (.devcontainer/), so the repos are
-      # expected next to it, in the project folder.
-      - ../community:/odoo/community:cached
-      - ../enterprise:/odoo/enterprise:cached
-      - ../rsfu:/odoo/rsfu:cached
+      # The only host directory mounted into the container: the project
+      # folder, the parent of this file's folder (.devcontainer/), read-only.
+      # seed-repos.sh sets up the container's own clones from the repos in
+      # it, borrowing their objects (see "Git repositories" in the README).
+      # The whole folder rather than each repo's .git, as Docker would create
+      # missing mount sources on the host, as empty folders.
+      - ..:/host:ro
+      # The container's own clones. Never mounted on the host.
+      - src:/odoo
       # Docker-managed volumes
       - odoo-filestore:/home/dev/.local/share/Odoo
       - claude-config:/home/dev/.claude
@@ -123,6 +126,7 @@ networks:
     name: odoo-dev-egress
 
 volumes:
+  src:
   pg-data:
   odoo-filestore:
   claude-config:

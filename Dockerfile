@@ -85,6 +85,9 @@ ENV PATH="${PATH}:/usr/games"
 RUN mkdir -p /home/${USERNAME}/.local/share/Odoo /home/${USERNAME}/.claude /odoo \
     && chown -R ${USERNAME}:${USERNAME} /home/${USERNAME} /odoo
 
+# Sets up /odoo/<repo> from the host's repos (postCreateCommand)
+COPY seed-repos.sh /usr/local/bin/seed-repos
+
 # Odoo config (copied into the image, not mounted). ODOO_RC makes odoo-bin pick it up.
 COPY odoo.conf /etc/odoo/odoo.conf
 ENV ODOO_RC=/etc/odoo/odoo.conf
