@@ -15,7 +15,7 @@ RUN curl -fsSLo /tmp/wkhtmltox.deb https://github.com/wkhtmltopdf/packaging/rele
         /tmp/wkhtmltox.deb \
         # Headless browser for tour/HttpCase tests, and fonts for it and PDFs
         chromium fonts-liberation \
-        postgresql-client sudo zsh vim \
+        postgresql-client sudo zsh vim jq \
         cowsay fortune-mod fortunes fortunes-debian-hints \
     && rm -rf /tmp/wkhtmltox.deb /var/lib/apt/lists/*
 
@@ -55,6 +55,8 @@ COPY claude/managed-settings.json /etc/claude-code/managed-settings.json
 COPY claude/link-skills.sh /usr/local/bin/link-skills
 COPY odoo/odoo.conf /etc/odoo/odoo.conf
 COPY odoo/seed-repos.sh /usr/local/bin/seed-repos
+COPY odoo/task.sh /usr/local/bin/task
+COPY odoo/obin.sh /usr/local/bin/obin
 COPY dotfiles/check-ssh-agent.sh /usr/local/bin/check-ssh-agent
 COPY --chown=dev:dev dotfiles/zshrc /home/dev/.zshrc
 COPY --chown=dev:dev dotfiles/gitconfig /home/dev/.gitconfig

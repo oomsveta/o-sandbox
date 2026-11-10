@@ -3,6 +3,14 @@
     "commit": "",
     "pr": ""
   },
+  "hooks": {
+    "WorktreeCreate": [
+      { "hooks": [{ "type": "command", "command": "task hook-create" }] }
+    ],
+    "WorktreeRemove": [
+      { "hooks": [{ "type": "command", "command": "task hook-remove" }] }
+    ]
+  },
   "permissions": {
     "ask": [
       "Bash(git push)",
@@ -13,4 +21,3 @@
     "disableBypassPermissionsMode": "disable"
   }
 }
-

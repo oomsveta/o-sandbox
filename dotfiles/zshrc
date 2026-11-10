@@ -23,9 +23,6 @@ zstyle ':vcs_info:git:*' formats '(%b)'
 setopt PROMPT_SUBST
 PROMPT='%F{33}%n%f@%F{28}%m%f %F{166}%~%f%F{125}${vcs_info_msg_0_}%f %# '
 
-# odoo-bin, with /etc/odoo/odoo.conf ($ODOO_RC)
-alias obin=/odoo/community/odoo-bin
-
 fortune | cowsay
 
 # Warn, loudly, if the host's SSH agent (forwarded by VS Code) holds keys.

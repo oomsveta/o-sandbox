@@ -89,6 +89,41 @@ TODO
 
 TODO
 
+### Parallel tasks
+
+To have several Claude Code sessions (or yourself) work on different things at once, each one works in its own **task**: a folder in `/odoo/tasks` with everything that would otherwise collide.
+
+```
+/odoo/tasks/<name>/
+├── community/    git worktree of /odoo/community, on branch <base>-<name>-<trigram>
+├── enterprise/   git worktree of /odoo/enterprise, on the same branch
+├── odoo.conf     these checkouts' addons, database <name>, ports 8069+100·N / 8072+100·N
+├── CLAUDE.md     tells Claude Code all of the above
+└── .claude/settings.local.json   sets ODOO_RC for sessions started in the task
+```
+
+```
+task new fix-foo                  # branch master-fix-foo-wil, from origin/master
+task new fix-bar 18.0 --fetch     # branch 18.0-fix-bar-wil, from a freshly fetched origin/18.0
+task new review --branch master-thing-xyz   # an existing branch (local or on dev)
+task list
+task rm fix-foo                   # refuses if there are uncommitted or unpushed changes
+```
+
+Then start Claude Code in the task (`cd /odoo/tasks/fix-foo && claude`), or open the folder in a new VS Code window. `claude --worktree fix-foo` also creates a task and starts in it, through the `WorktreeCreate` hook (see [Claude Code settings](#claude-code-settings)).
+
+**`obin`** runs the `odoo-bin` of the task the current folder is in, with the task's `odoo.conf`, and the main checkout's outside of tasks. Don't run a task's `./odoo-bin` directly: it would read `/etc/odoo/odoo.conf`, i.e. the *main* checkouts' addons and database.
+
+**Details:**
+
+- **Cost:** about 2 GB of disk per task (the files; git objects are shared with the main clones) and 30 seconds to create.
+- **Branches:** the trigram is the part before `@` of your git email (override with `TASK_TRIGRAM`); the default base is `master` (override with `TASK_BASE`). Pushes go to the `dev` remote. `task rm` deletes the branch, unless it has unpushed commits.
+- **JS tooling:** its untracked files (`package.json`, `node_modules`, ESLint config…) are copied from the main checkouts, so the pre-commit hook works in tasks.
+- **Python:** all tasks share one virtualenv. `task new` installs the task's `requirements.txt` the first time it sees a given version of it. Tasks on very different Odoo versions may need conflicting packages; the last one installed wins.
+- **Claude's memory** is per folder: each task's points to `/odoo`'s, so what Claude learns in one task applies to all.
+- **Memory (RAM):** each running Odoo, and each Chromium for tour tests, needs some. Give Docker enough of it for the number of tasks you run at once.
+- **Subagents** with `isolation: "worktree"` get a whole task each, which Claude Code doesn't remove when they finish: clean up with `task list` and `task rm`.
+
 ### Claude Code
 
 TODO
@@ -190,6 +225,7 @@ Instead, the image gets [dotfiles/gitconfig](./dotfiles/gitconfig) as `~/.gitcon
 - Claude Code asks for confirmation before any `git push`.
 - Bypass permissions mode (`--dangerously-skip-permissions`) is disabled.
 - No `Co-Authored-By: Claude` trailer in commits, nor "Generated with Claude Code" line in PR descriptions (`attribution`), as it's against the company policy.
+- Claude Code's worktrees are [tasks](#parallel-tasks) (`WorktreeCreate` and `WorktreeRemove` hooks): `claude --worktree`, the `EnterWorktree` tool and subagents with `isolation: "worktree"` create one with `task new`. This applies to any folder, even a single git repo like this one.
 
 Claude Code's auto-updater is also disabled, since Claude Code is installed in a root-owned folder. Rebuild the container to update it.
 
