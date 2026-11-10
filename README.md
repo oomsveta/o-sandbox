@@ -167,6 +167,9 @@ To use the host's own key instead, set `GIT_RELAY_SSH_KEY` to its absolute path,
 GIT_RELAY_SSH_KEY=/Users/you/.ssh/id_ed25519
 ```
 
+> [!NOTE]
+> Make sure you provide a path without the "tilde expansion" (no `~/`).
+
 It's mounted, read-only, into the `git-relay` container only. It must not have a passphrase, as the relay can't type it (it says so in its logs). It must not be in the project folder either, which the dev container can read through `/host`.
 
 The relay's own key is the safer choice: it only exists for GitHub, and it can be revoked on its own if the relay is ever compromised. The host's key is typically also used elsewhere (other servers, commit signing), and revoking it means replacing it everywhere.
