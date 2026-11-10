@@ -52,6 +52,7 @@ RUN git config --system url."git-relay:".insteadOf "git@github.com:" \
     && git config --system --add url."git-relay:".insteadOf "ssh://git@github.com/"
 
 COPY claude/managed-settings.json /etc/claude-code/managed-settings.json
+COPY claude/link-skills.sh /usr/local/bin/link-skills
 COPY odoo/odoo.conf /etc/odoo/odoo.conf
 COPY odoo/seed-repos.sh /usr/local/bin/seed-repos
 COPY dotfiles/check-ssh-agent.sh /usr/local/bin/check-ssh-agent

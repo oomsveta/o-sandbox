@@ -39,5 +39,6 @@
   "forwardPorts": [8069, 8072],
 
   "postCreateCommand": "seed-repos; pip install --upgrade pip wheel && pip install -r /odoo/community/requirements.txt",
+  "postStartCommand": "link-skills",
   "postAttachCommand": "check-ssh-agent"
 }
