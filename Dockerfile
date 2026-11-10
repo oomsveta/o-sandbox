@@ -32,7 +32,10 @@ RUN useradd --uid 1000 --user-group --create-home --shell /bin/zsh dev \
     && chmod 0440 /etc/sudoers.d/dev
 
 # A virtualenv the dev user can pip install into.
-RUN python -m venv /opt/venv && chown -R dev:dev /opt/venv
+RUN python -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir phonenumbers \
+    && chown -R dev:dev /opt/venv
+
 # /usr/games: cowsay and fortune
 ENV PATH="/opt/venv/bin:${PATH}:/usr/games" \
     EDITOR=vim \
