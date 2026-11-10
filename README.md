@@ -189,6 +189,7 @@ Instead, the image gets [dotfiles/gitconfig](./dotfiles/gitconfig) as `~/.gitcon
 
 - Claude Code asks for confirmation before any `git push`.
 - Bypass permissions mode (`--dangerously-skip-permissions`) is disabled.
+- No `Co-Authored-By: Claude` trailer in commits, nor "Generated with Claude Code" line in PR descriptions (`attribution`), as it's against the company policy.
 
 Claude Code's auto-updater is also disabled, since Claude Code is installed in a root-owned folder. Rebuild the container to update it.
 
