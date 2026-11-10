@@ -56,3 +56,4 @@ COPY odoo/odoo.conf /etc/odoo/odoo.conf
 COPY odoo/seed-repos.sh /usr/local/bin/seed-repos
 COPY dotfiles/check-ssh-agent.sh /usr/local/bin/check-ssh-agent
 COPY --chown=dev:dev dotfiles/zshrc /home/dev/.zshrc
+COPY --chown=dev:dev dotfiles/gitconfig /home/dev/.gitconfig

@@ -51,9 +51,10 @@ It can still damage what's inside the sandbox, like the container's clones, the 
    ```
    The repos are optional, but they must be regular clones, not `git worktree`s. See [Git repositories](#git-repositories).
 2. Empty the host's SSH agent. See [below](#emptying-the-hosts-ssh-agent).
-3. In VS Code's user settings, set `"dev.containers.gitCredentialHelperConfigLocation": "none"`, so the host's git credentials aren't passed to the container.
-4. Open `odoo/` in VS Code and run **Dev Containers: Reopen in Container**. The first start builds the image, sets up the repos and installs Odoo's Python dependencies.
-5. Add the relay's public key to your GitHub account (Settings → SSH and GPG keys). Get it with `cat /etc/git-relay/github_key.pub` in the dev container. To use your own key instead, see [Git relay (SSH)](#git-relay-ssh).
+3. In VS Code's user settings, set `"dev.containers.gitCredentialHelperConfigLocation": "none"` and `"dev.containers.copyGitConfig": false`, so neither the host's git credentials nor its `~/.gitconfig` are passed to the container.
+4. Put your git identity in [dotfiles/gitconfig](./dotfiles/gitconfig). See [Git config](#git-config).
+5. Open `odoo/` in VS Code and run **Dev Containers: Reopen in Container**. The first start builds the image, sets up the repos and installs Odoo's Python dependencies.
+6. Add the relay's public key to your GitHub account (Settings → SSH and GPG keys). Get it with `cat /etc/git-relay/github_key.pub` in the dev container. To use your own key instead, see [Git relay (SSH)](#git-relay-ssh).
 
 ### Emptying the host's SSH agent
 
@@ -173,6 +174,14 @@ GIT_RELAY_SSH_KEY=/Users/you/.ssh/id_ed25519
 It's mounted, read-only, into the `git-relay` container only. It must not have a passphrase, as the relay can't type it (it says so in its logs). It must not be in the project folder either, which the dev container can read through `/host`.
 
 The relay's own key is the safer choice: it only exists for GitHub, and it can be revoked on its own if the relay is ever compromised. The host's key is typically also used elsewhere (other servers, commit signing), and revoking it means replacing it everywhere.
+
+### Git config
+
+VS Code copies the host's `~/.gitconfig` into the dev container by default. Setup step 3 turns that off (`dev.containers.copyGitConfig`): it would bring in settings meant for the host, e.g. credential helpers, commit signing through the SSH agent, or paths that only exist there.
+
+Instead, the image gets [dotfiles/gitconfig](./dotfiles/gitconfig) as `~/.gitconfig`, with my git identity and settings. Edit it to use yours, then rebuild the container.
+
+`git config --global` works, but its changes are lost when the container is rebuilt. Put the ones to keep in `dotfiles/gitconfig`.
 
 ### Claude Code settings
 

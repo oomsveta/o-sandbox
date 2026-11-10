@@ -1,0 +1,16 @@
+# ~/.gitconfig in the dev container. The host's isn't copied in (see "Git
+# config" in the README). Changes made with `git config --global` are lost
+# when the container is rebuilt: put the ones to keep here.
+[user]
+	name = Louis (wil)
+	email = wil@odoo.com
+[core]
+	editor = vim
+[color]
+	ui = true
+[fetch]
+	prune = true
+[pull]
+	rebase = true
+[push]
+	autoSetupRemote = true
