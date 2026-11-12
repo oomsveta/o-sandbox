@@ -72,7 +72,7 @@ push = [
 ]
 # Refs a push may update: a Python regex that must match the whole ref.
 # Odoo dev branches end with the author's trigram, e.g. master-fix-foo-wil.
-push_refs = 'refs/heads/[\w./-]+-wil'
+push_refs = 'refs/heads/[\w./-]+-(wil|fw)'
 # Whether a push may delete refs (that match push_refs).
 # Force pushes can't be told apart from regular ones; use GitHub branch
 # protection if that matters.
