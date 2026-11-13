@@ -183,6 +183,14 @@ Instead, the image gets [dotfiles/gitconfig](./dotfiles/gitconfig) as `~/.gitcon
 
 `git config --global` works, but its changes are lost when the container is rebuilt. Put the ones to keep in `dotfiles/gitconfig`.
 
+### Database
+
+Odoo refuses to run with a PostgreSQL superuser role: a superuser can run OS commands and read or write files in the `db` container. So the dev container connects as `odoo`, a regular role that can create databases (`PGUSER`, [odoo.conf](./odoo/odoo.conf)).
+
+The superuser is `postgres`, and it has no password: it's only reachable through the server's Unix socket, inside the `db` container. From the host: `docker exec -it -u postgres <db container> psql` (`docker ps` lists it).
+
+[db/init.sql](./db/init.sql) sets this up when the `db` container creates a new cluster, i.e. on an empty `pg-data` volume. It also creates the `vector` extension (AI modules), which only a superuser can create, in `template0`, the template Odoo creates databases from, so that every database has it. Changes to it only apply after deleting the `pg-data` volume, and with it all the databases.
+
 ### Claude Code settings
 
 [managed-settings.json](./claude/managed-settings.json) is installed as Claude Code's managed settings, which take precedence over user and project settings:
