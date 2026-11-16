@@ -11,6 +11,19 @@
       "Bash(git * push *)"
     ],
     "disableBypassPermissionsMode": "disable"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "test-gate-hook",
+            "timeout": 900
+          }
+        ]
+      }
+    ]
   }
 }
-

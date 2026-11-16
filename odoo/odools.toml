@@ -6,3 +6,5 @@
 name = "default"
 odoo_path = "/odoo/community"
 addons_paths = ["/odoo/community/addons", "/odoo/enterprise"]
+# Less memory: doesn't keep the contents of the files it reads.
+file_cache = false

@@ -85,6 +85,8 @@ TODO
 
 TODO
 
+Test runs wait for enough free memory to start (2 GB by default), one at a time, so that parallel agents don't run more of them than fit in memory: Claude Code does it on its own (see [Claude Code settings](#claude-code-settings)), and you can too, with `test-gate && odoo-bin ...`. See [test-gate.sh](./claude/test-gate.sh) for its settings (`TEST_GATE_*` environment variables).
+
 ### Debugging
 
 TODO
@@ -197,6 +199,7 @@ The superuser is `postgres`, and it has no password: it's only reachable through
 
 - Claude Code asks for confirmation before any `git push`.
 - Bypass permissions mode (`--dangerously-skip-permissions`) is disabled.
+- Before a command that runs Odoo tests (`--test-enable`, `--test-tags` or `--test-file`), a hook ([test-gate-hook.sh](./claude/test-gate-hook.sh)) waits for enough free memory, for up to 14 minutes. If there still isn't enough, the command is blocked and Claude is told to retry later.
 - No `Co-Authored-By: Claude` trailer in commits, nor "Generated with Claude Code" line in PR descriptions (`attribution`), as it's against the company policy.
 
 Claude Code's auto-updater is also disabled, since Claude Code is installed in a root-owned folder. Rebuild the container to update it.

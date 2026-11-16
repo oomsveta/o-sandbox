@@ -3,6 +3,10 @@ services:
     build:
       context: .
     hostname: o-sandbox
+    # A runaway test run gets killed in here rather than the whole VM
+    # swapping. Fit to OrbStack's or Docker Desktop's memory limit, minus
+    # about 1 GB for the other containers, in .devcontainer/.env.
+    mem_limit: ${ODOO_MEM_LIMIT:-7g}
     # PID 1 runs as root only to trust the HTTPS proxy's CA, then idles.
     # VS Code attaches as `dev` (remoteUser).
     command:
