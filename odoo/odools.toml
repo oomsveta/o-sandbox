@@ -1,0 +1,8 @@
+# Odoo language server (Odoo.odoo extension) config, copied to /odoo by
+# seed-repos. Without it, the server takes every Odoo checkout in the
+# workspace as an addons path, worktrees in /odoo/tasks/ included: one more
+# copy of community and enterprise in memory for each.
+[[config]]
+name = "default"
+odoo_path = "/odoo/community"
+addons_paths = ["/odoo/community/addons", "/odoo/enterprise"]

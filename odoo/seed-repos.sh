@@ -128,4 +128,9 @@ if [ -n "$js_tooling" ] && [ -x /odoo/community/addons/web/tooling/enable.sh ]; 
     fi
 fi
 
+# The Odoo language server's config (see odools.toml), unless one exists.
+if [ ! -e /odoo/odools.toml ]; then
+    cp /etc/odoo/odools.toml /odoo/odools.toml
+fi
+
 exit $failed

@@ -31,7 +31,13 @@
         "python.terminal.activateEnvironment": false,
         "ruff.lineLength": 100,
         "telemetry.telemetryLevel": "off",
-        "terminal.integrated.defaultProfile.linux": "zsh"
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        // costs too much RAM and is redundant with Odoo LS
+        "python.languageServer": "None",
+        // Worktrees (one per task, each a full copy of the repos): neither
+        // watched nor searched. Odoo LS skips them too (odoo/odools.toml).
+        "files.watcherExclude": { "**/tasks/**": true },
+        "search.exclude": { "**/tasks/**": true }
       }
     }
   },
